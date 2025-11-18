@@ -8,7 +8,7 @@ from src.agents.executive import executive_agent
 from src.agents.emotional import emotional_agent
 from src.agents.prioritization import prioritization_agent
 from src.utils.logger import logger
-from anthropic import AsyncAnthropic
+from src.utils.llm_client import llm_client
 from src.utils.config import settings
 
 
@@ -22,7 +22,7 @@ class Orchestrator:
         self.executive = executive_agent
         self.emotional = emotional_agent
         self.prioritization = prioritization_agent
-        self.client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+        self.llm_client = llm_client
 
     async def process_request(self, request: AgentRequest) -> AgentResponse:
         """
@@ -80,16 +80,11 @@ class Orchestrator:
         return selected
 
     async def _ai_agent_selection(self, request: AgentRequest) -> List[AgentType]:
-        """Use Claude to intelligently select agents"""
+        """Use LLM to intelligently select agents"""
         try:
-            response = await self.client.messages.create(
-                model=settings.CLAUDE_MODEL,
-                max_tokens=100,
-                temperature=0.3,
-                system="You are an AI routing system. Classify user requests into agent types.",
-                messages=[{
-                    'role': 'user',
-                    'content': f"""User request: "{request.input}"
+            messages = [{
+                'role': 'user',
+                'content': f"""User request: "{request.input}"
 
 Which agent(s) should handle this? Choose from:
 - EXECUTIVE: emails, calendar, logistics, scheduling
@@ -97,10 +92,16 @@ Which agent(s) should handle this? Choose from:
 - PRIORITIZATION: task priorities, strategy, planning, optimization
 
 Respond with just the agent name(s), comma-separated."""
-                }]
+            }]
+
+            agent_text = await self.llm_client.chat_completion(
+                messages=messages,
+                system_prompt="You are an AI routing system. Classify user requests into agent types.",
+                max_tokens=100,
+                temperature=0.3
             )
 
-            agent_text = response.content[0].text.upper()
+            agent_text = agent_text.upper()
             selected = []
 
             if 'EXECUTIVE' in agent_text:
@@ -183,26 +184,25 @@ Respond with just the agent name(s), comma-separated."""
             combined_content.append(f"[{response.agent_type.value.upper()}]: {response.content}")
             all_actions.extend(response.actions)
 
-        # Use Claude to create a coherent synthesis
+        # Use LLM to create a coherent synthesis
         try:
-            synthesis = await self.client.messages.create(
-                model=settings.CLAUDE_MODEL,
-                max_tokens=1500,
-                temperature=0.7,
-                system="""You are VINEGAR, a Jarvis-like AI assistant. Multiple specialized agents have analyzed the user's request.
-Synthesize their insights into ONE coherent, natural response. Be friendly, witty, and direct.""",
-                messages=[{
-                    'role': 'user',
-                    'content': f"""User asked: "{request.input}"
+            messages = [{
+                'role': 'user',
+                'content': f"""User asked: "{request.input}"
 
 Agent responses:
 {chr(10).join(combined_content)}
 
 Synthesize these into one natural, helpful response that sounds like Jarvis."""
-                }]
-            )
+            }]
 
-            synthesized_text = synthesis.content[0].text
+            synthesized_text = await self.llm_client.chat_completion(
+                messages=messages,
+                system_prompt="""You are VINEGAR, a Jarvis-like AI assistant. Multiple specialized agents have analyzed the user's request.
+Synthesize their insights into ONE coherent, natural response. Be friendly, witty, and direct.""",
+                max_tokens=1500,
+                temperature=0.7
+            )
 
             return AgentResponse(
                 id=str(uuid.uuid4()),
@@ -229,20 +229,19 @@ Synthesize these into one natural, helpful response that sounds like Jarvis."""
 
             messages.append({'role': 'user', 'content': request.input})
 
-            response = await self.client.messages.create(
-                model=settings.CLAUDE_MODEL,
-                max_tokens=1000,
-                temperature=0.7,
-                system="""You are VINEGAR, a Jarvis-like AI personal assistant.
+            response_text = await self.llm_client.chat_completion(
+                messages=messages,
+                system_prompt="""You are VINEGAR, a Jarvis-like AI personal assistant.
 You're friendly, witty, direct, and proactive.
 Communicate like Jarvis from Iron Man - capable, supportive, and occasionally sarcastic.""",
-                messages=messages
+                max_tokens=1000,
+                temperature=0.7
             )
 
             return AgentResponse(
                 id=str(uuid.uuid4()),
                 agent_type=AgentType.ORCHESTRATOR,
-                content=response.content[0].text,
+                content=response_text,
                 actions=[],
                 should_speak=True,
                 confidence=0.75,

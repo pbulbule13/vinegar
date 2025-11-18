@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
-from anthropic import AsyncAnthropic
 from src.models.types import AgentRequest, AgentResponse, AgentType, Message
 from src.utils.config import settings
 from src.utils.logger import logger
+from src.utils.llm_client import llm_client
 
 
 class BaseAgent(ABC):
@@ -11,8 +11,8 @@ class BaseAgent(ABC):
 
     def __init__(self, agent_type: AgentType):
         self.agent_type = agent_type
-        self.client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-        self.model = settings.CLAUDE_MODEL
+        self.llm_client = llm_client
+        self.model = settings.MODEL_NAME
 
     @abstractmethod
     async def process(self, request: AgentRequest) -> AgentResponse:
@@ -24,33 +24,36 @@ class BaseAgent(ABC):
         """Get the system prompt for this agent"""
         pass
 
-    async def call_claude(
+    async def call_llm(
         self,
         messages: List[dict],
         system_prompt: str,
         max_tokens: int = 2000,
         temperature: float = 0.7
     ) -> str:
-        """Call Claude API with messages"""
+        """Call LLM API with automatic fallback (Euron → DeepSeek → Gemini → OpenAI)"""
         try:
-            response = await self.client.messages.create(
-                model=self.model,
+            content = await self.llm_client.chat_completion(
+                messages=messages,
+                system_prompt=system_prompt,
                 max_tokens=max_tokens,
-                temperature=temperature,
-                system=system_prompt,
-                messages=messages
+                temperature=temperature
             )
 
-            content = response.content[0].text
             logger.info(f"{self.agent_type} agent generated response")
             return content
 
         except Exception as e:
-            logger.error(f"Error calling Claude: {e}")
+            logger.error(f"Error calling LLM: {e}")
             return f"I encountered an error: {str(e)}"
 
+    # Alias for backwards compatibility
+    async def call_claude(self, messages: List[dict], system_prompt: str, max_tokens: int = 2000, temperature: float = 0.7) -> str:
+        """Backwards compatibility alias"""
+        return await self.call_llm(messages, system_prompt, max_tokens, temperature)
+
     def format_conversation_history(self, messages: List[Message]) -> List[dict]:
-        """Format conversation history for Claude API"""
+        """Format conversation history for LLM API"""
         formatted = []
         for msg in messages:
             if msg.role in ['user', 'assistant']:

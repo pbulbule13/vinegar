@@ -8,13 +8,22 @@ class Settings(BaseSettings):
     PORT: int = int(os.getenv("PORT", "8080"))
     ENV: str = os.getenv("NODE_ENV", "production")
 
-    # AI APIs
-    ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
+    # Multi-LLM Configuration (Priority: Euron → DeepSeek → Gemini → OpenAI)
+    EURON_API_KEY: str = os.getenv("EURON_API_KEY", "")
+    EURON_API_BASE: str = os.getenv("EURON_API_BASE", "https://api.euron.one/api/v1/euri")
+    EURON_MODEL: str = os.getenv("EURON_MODEL", "gpt-4.1-nano")
+
+    DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
+    DEEPSEEK_API_BASE: str = os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1")
+
+    GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+
+    MODEL_NAME: str = os.getenv("MODEL_NAME", "gpt-4.1-nano")
 
     # Voice
     ELEVENLABS_API_KEY: str = os.getenv("ELEVENLABS_API_KEY", "")
-    ELEVENLABS_VOICE_ID: str = os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")
+    ELEVENLABS_VOICE_ID: str = os.getenv("ELEVENLABS_VOICE_ID", "2qfp6zPuviqeCOZIE9RZ")
 
     # Google Cloud
     GOOGLE_CLOUD_PROJECT: str = os.getenv("GOOGLE_CLOUD_PROJECT", "pbulbule-apps-1762314316")
