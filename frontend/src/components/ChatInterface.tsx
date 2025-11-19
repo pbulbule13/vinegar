@@ -90,32 +90,45 @@ export function ChatInterface({ userId }: { userId: string }) {
   }
 
   return (
-    <Card className="flex flex-col h-[600px] bg-gradient-to-br from-slate-900 to-slate-800 border-cyan-500/20">
+    <Card className="flex flex-col h-[600px] glass-morphism cyber-glow border-cyan-500/30 relative overflow-hidden">
+      {/* Holographic shimmer effect */}
+      <div className="absolute inset-0 animate-holographic pointer-events-none"></div>
+
       {/* Header */}
-      <div className="p-4 border-b border-cyan-500/20">
+      <div className="p-4 border-b border-cyan-500/20 relative z-10">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-cyan-400">VINEGAR AI-OS</h2>
+            <h2 className="text-xl font-bold text-cyan-400 neon-text">VINEGAR AI-OS</h2>
             <p className="text-xs text-cyan-400/60">Your Jarvis-like AI Assistant</p>
           </div>
-          <Button
-            size="icon"
-            variant={voiceEnabled ? "default" : "outline"}
-            onClick={() => setVoiceEnabled(!voiceEnabled)}
-            className={cn(
-              voiceEnabled && "bg-cyan-500 hover:bg-cyan-600"
+          <div className="flex items-center gap-2">
+            {voiceEnabled && (
+              <div className="flex gap-1 items-end h-6">
+                <div className="w-1 bg-cyan-400 rounded voice-wave" style={{ animationDelay: '0s' }}></div>
+                <div className="w-1 bg-cyan-400 rounded voice-wave" style={{ animationDelay: '0.1s' }}></div>
+                <div className="w-1 bg-cyan-400 rounded voice-wave" style={{ animationDelay: '0.2s' }}></div>
+                <div className="w-1 bg-cyan-400 rounded voice-wave" style={{ animationDelay: '0.3s' }}></div>
+              </div>
             )}
-          >
-            {voiceEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-          </Button>
+            <Button
+              size="icon"
+              variant={voiceEnabled ? "default" : "outline"}
+              onClick={() => setVoiceEnabled(!voiceEnabled)}
+              className={cn(
+                voiceEnabled && "bg-cyan-500 hover:bg-cyan-600 animate-pulse-glow"
+              )}
+            >
+              {voiceEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+            </Button>
+          </div>
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 relative z-10">
         {messages.length === 0 && (
           <div className="text-center py-12 text-cyan-400/40">
-            <p className="text-lg">Ready to assist, sir.</p>
+            <p className="text-lg neon-text animate-pulse">Ready to assist, sir.</p>
             <p className="text-sm mt-2">How may I be of service?</p>
           </div>
         )}
@@ -130,14 +143,15 @@ export function ChatInterface({ userId }: { userId: string }) {
           >
             <div
               className={cn(
-                "max-w-[80%] rounded-lg p-3",
+                "max-w-[80%] rounded-lg p-3 relative",
                 msg.role === 'user'
-                  ? "bg-cyan-600 text-white"
-                  : "bg-slate-700 text-cyan-100"
+                  ? "bg-cyan-600 text-white cyber-glow"
+                  : "glass-morphism text-cyan-100 border border-cyan-500/20"
               )}
             >
               {msg.role === 'assistant' && msg.agentType && (
-                <div className="text-xs text-cyan-400 mb-1 font-mono">
+                <div className="text-xs text-cyan-400 mb-1 font-mono flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-pulse"></div>
                   [{msg.agentType.toUpperCase()}]
                 </div>
               )}
@@ -165,7 +179,7 @@ export function ChatInterface({ userId }: { userId: string }) {
       </div>
 
       {/* Input */}
-      <div className="p-4 border-t border-cyan-500/20">
+      <div className="p-4 border-t border-cyan-500/20 relative z-10">
         <div className="flex gap-2">
           <input
             type="text"
@@ -173,13 +187,13 @@ export function ChatInterface({ userId }: { userId: string }) {
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder="Ask VINEGAR anything..."
-            className="flex-1 bg-slate-700 text-cyan-100 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            className="flex-1 glass-morphism text-cyan-100 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 border border-cyan-500/20"
             disabled={isLoading}
           />
           <Button
             onClick={sendMessage}
             disabled={isLoading || !input.trim()}
-            className="bg-cyan-500 hover:bg-cyan-600"
+            className="bg-cyan-500 hover:bg-cyan-600 cyber-glow"
           >
             <Send className="h-4 w-4" />
           </Button>

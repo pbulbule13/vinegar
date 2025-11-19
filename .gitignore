@@ -58,3 +58,7 @@ logs/
 backend/dist/
 frontend/dist/
 frontend/build/
+.env.yaml
+DEPLOYMENT_INFO.md
+DEPLOYMENT_VALIDATION.html
+VINEGAR_COMPLETE_GUIDE.html

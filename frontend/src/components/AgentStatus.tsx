@@ -52,32 +52,36 @@ export function AgentStatus() {
 
   return (
     <div className="space-y-4">
-      <Card className="bg-gradient-to-br from-slate-900 to-slate-800 border-cyan-500/20">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-cyan-400">
-            <Activity className="h-5 w-5" />
+      <Card className="glass-morphism cyber-glow border-cyan-500/30 relative overflow-hidden">
+        <div className="absolute inset-0 animate-holographic pointer-events-none opacity-50"></div>
+        <CardHeader className="relative z-10">
+          <CardTitle className="flex items-center gap-2 text-cyan-400 neon-text">
+            <Activity className="h-5 w-5 animate-pulse" />
             System Status
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 relative z-10">
           {metrics && (
             <>
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-cyan-400/60">Response Latency</span>
-                  <span className="text-cyan-400">{metrics.response_latency.toFixed(0)}ms</span>
+                  <span className="text-cyan-400 font-mono">{metrics.response_latency.toFixed(0)}ms</span>
                 </div>
-                <Progress value={(500 - metrics.response_latency) / 5} className="h-2" />
+                <div className="relative">
+                  <Progress value={(500 - metrics.response_latency) / 5} className="h-2" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-transparent animate-scan-line h-2"></div>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
+                <div className="space-y-1 glass-morphism p-3 rounded-lg border border-cyan-500/20">
                   <p className="text-xs text-cyan-400/60">Requests</p>
-                  <p className="text-2xl font-bold text-cyan-400">{metrics.request_count}</p>
+                  <p className="text-2xl font-bold text-cyan-400 neon-text font-mono">{metrics.request_count}</p>
                 </div>
-                <div className="space-y-1">
+                <div className="space-y-1 glass-morphism p-3 rounded-lg border border-cyan-500/20">
                   <p className="text-xs text-cyan-400/60">Uptime</p>
-                  <p className="text-2xl font-bold text-cyan-400">
+                  <p className="text-2xl font-bold text-cyan-400 neon-text font-mono">
                     {Math.floor(metrics.uptime / 3600)}h
                   </p>
                 </div>
@@ -97,25 +101,33 @@ export function AgentStatus() {
         </CardContent>
       </Card>
 
-      <Card className="bg-gradient-to-br from-slate-900 to-slate-800 border-cyan-500/20">
-        <CardHeader>
-          <CardTitle className="text-cyan-400">Active Agents</CardTitle>
+      <Card className="glass-morphism cyber-glow border-cyan-500/30 relative overflow-hidden">
+        <div className="absolute inset-0 animate-holographic pointer-events-none opacity-50"></div>
+        <CardHeader className="relative z-10">
+          <CardTitle className="text-cyan-400 neon-text">Active Agents</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-3 relative z-10">
           {agents.map((agent) => (
             <div
               key={agent.name}
-              className={`flex items-center gap-3 p-3 rounded-lg ${agent.bgColor}`}
+              className={`flex items-center gap-3 p-3 rounded-lg ${agent.bgColor} glass-morphism border border-cyan-500/20 relative group hover:border-cyan-400/40 transition-all`}
             >
-              <div className={`p-2 rounded-lg bg-slate-800 ${agent.color}`}>
-                <agent.icon className="h-5 w-5" />
+              <div className={`p-2 rounded-lg bg-slate-800 ${agent.color} animate-pulse-glow`}>
+                <agent.icon className="h-5 w-5 animate-float" />
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <p className="font-semibold text-cyan-100">{agent.name}</p>
-                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse-glow" />
+                  <div className="flex gap-1">
+                    <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse-glow" />
+                    <div className="w-1 h-1 bg-green-300 rounded-full animate-pulse-glow" style={{ animationDelay: '0.5s' }} />
+                  </div>
                 </div>
                 <p className="text-xs text-cyan-400/60">{agent.description}</p>
+              </div>
+              {/* Circuit animation on hover */}
+              <div className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-scan-line"></div>
               </div>
             </div>
           ))}
