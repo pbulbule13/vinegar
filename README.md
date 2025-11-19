@@ -105,6 +105,19 @@ npm run dev
 
 Visit `http://localhost:3000` to see your Jarvis-like AI assistant in action!
 
+## 🌐 Live Demo
+
+Experience VINEGAR AI-OS in action:
+
+- **Frontend**: [https://vinegar-frontend-694708874867.us-central1.run.app](https://vinegar-frontend-694708874867.us-central1.run.app)
+- **Backend API**: [https://vinegar-backend-xf3nn3udga-uc.a.run.app](https://vinegar-backend-xf3nn3udga-uc.a.run.app)
+- **GitHub Repository**: [https://github.com/pbulbule13/vinegar](https://github.com/pbulbule13/vinegar)
+
+Try interacting with the three specialized agents:
+- Ask about emails: "What's in my inbox?"
+- Get emotional support: "I'm feeling stressed"
+- Plan your day: "What should I prioritize today?"
+
 ## 🐳 Docker Deployment
 
 ### Build and Run
