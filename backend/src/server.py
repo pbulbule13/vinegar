@@ -122,14 +122,23 @@ async def chat(request: ChatRequest) -> ChatResponse:
     global request_counter
     request_counter += 1
 
+    logger.info(f"[CHAT] New request from user: {request.user_id}")
+    logger.info(f"[CHAT] Message: {request.message[:100]}...")
+    logger.info(f"[CHAT] Voice enabled: {request.voice_enabled}")
+    logger.info(f"[CHAT] Session ID: {request.session_id}")
+
     try:
         # Get or create session
         session_id = request.session_id or str(uuid.uuid4())
+        logger.info(f"[CHAT] Using session: {session_id}")
 
         # Get user profile
         profile = await firestore_service.get_user_profile(request.user_id)
         if not profile:
+            logger.error(f"[CHAT] User not found: {request.user_id}")
             raise HTTPException(status_code=404, detail="User not found")
+
+        logger.info(f"[CHAT] User profile loaded: {profile.name}")
 
         # Get session history
         session_data = await firestore_service.get_session(session_id)
@@ -139,6 +148,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
             history = [
                 Message(**msg) for msg in session_data['messages']
             ]
+            logger.info(f"[CHAT] Loaded {len(history)} messages from history")
 
         # Determine time of day
         hour = datetime.utcnow().hour
@@ -169,16 +179,26 @@ async def chat(request: ChatRequest) -> ChatResponse:
         )
 
         # Process with orchestrator
-        logger.info(f"Processing chat request: {request.message[:50]}...")
+        logger.info(f"[CHAT] Processing with orchestrator...")
         response = await orchestrator.process_request(agent_request)
+        logger.info(f"[CHAT] Agent response: {response.agent_type.value}")
+        logger.info(f"[CHAT] Response length: {len(response.content)} chars")
+        logger.info(f"[CHAT] Should speak: {response.should_speak}")
 
         # Generate voice if requested
         audio_url = None
         if request.voice_enabled and response.should_speak:
+            logger.info(f"[CHAT] Voice enabled, generating speech...")
             audio_bytes = await voice_service.text_to_speech(response.content)
             if audio_bytes:
+                logger.info(f"[CHAT] Speech generated: {len(audio_bytes)} bytes")
                 # In production, upload to Cloud Storage and return URL
                 audio_url = f"data:audio/mpeg;base64,{voice_service.audio_to_base64(audio_bytes)}"
+                logger.info(f"[CHAT] Audio URL created (base64 length: {len(audio_url)})")
+            else:
+                logger.warning(f"[CHAT] Failed to generate speech (likely no API key)")
+        else:
+            logger.info(f"[CHAT] Voice not requested or agent shouldn't speak")
 
         # Update session history
         history.append(Message(
@@ -194,12 +214,14 @@ async def chat(request: ChatRequest) -> ChatResponse:
         ))
 
         # Save session
+        logger.info(f"[CHAT] Saving session with {len(history)} messages")
         await firestore_service.save_session(session_id, {
             'user_id': request.user_id,
             'messages': [msg.model_dump(mode='json') for msg in history]
         })
 
         # Add to knowledge graph
+        logger.info(f"[CHAT] Adding to knowledge graph")
         await rag_service.add_knowledge(
             user_id=request.user_id,
             content=f"User asked: {request.message}. VINEGAR responded: {response.content}",
@@ -210,6 +232,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
             }
         )
 
+        logger.info(f"[CHAT] Request completed successfully")
         return ChatResponse(
             response=response.content,
             session_id=session_id,
@@ -219,7 +242,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         )
 
     except Exception as e:
-        logger.error(f"Error in chat endpoint: {e}")
+        logger.error(f"[CHAT] Error in chat endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
