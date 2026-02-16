@@ -814,5 +814,37 @@ export function getToolSchemas(): Array<{ type: string; name: string; descriptio
         },
       },
     },
+    {
+      type: 'function',
+      name: 'suggest_recipe',
+      description: 'Suggest recipes based on available groceries. Use when asked "what should I cook", "suggest a recipe".',
+      parameters: {
+        type: 'object',
+        properties: {
+          dietary_restrictions: { type: 'string', description: 'Dietary restrictions (vegetarian, gluten-free, etc.)' },
+          cuisine: { type: 'string', description: 'Preferred cuisine (Italian, Mexican, etc.)' },
+          meal_type: { type: 'string', description: 'breakfast, lunch, dinner, or snack' },
+          servings: { type: 'number', description: 'Number of servings (default 4)' },
+        },
+      },
+    },
+    {
+      type: 'function',
+      name: 'manage_budget',
+      description: 'Track bills, subscriptions, expenses, and income. Use for budget-related requests.',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', description: 'add, paid, list, upcoming, delete, or summary' },
+          name: { type: 'string', description: 'Bill/expense name' },
+          amount: { type: 'number', description: 'Amount in dollars' },
+          category: { type: 'string', description: 'Category (utilities, food, entertainment, etc.)' },
+          type: { type: 'string', description: 'bill, subscription, expense, or income' },
+          frequency: { type: 'string', description: 'one_time, weekly, monthly, or yearly' },
+          due_date: { type: 'string', description: 'Due date in ISO format' },
+          notes: { type: 'string', description: 'Additional notes' },
+        },
+      },
+    },
   ];
 }

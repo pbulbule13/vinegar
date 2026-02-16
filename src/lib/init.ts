@@ -20,6 +20,9 @@ if (!globalForInit.__vinegarInitialized) {
   require('./search-tools');
   require('./briefing-tools');
 
+  // Register Phase 7 tools (recipe AI, budget tracking)
+  require('./recipe-budget-tools');
+
   // Start the scheduler (reminder evaluation loop)
   const { startScheduler } = require('./scheduler');
   startScheduler();

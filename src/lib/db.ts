@@ -310,6 +310,40 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 6,
+    description: 'Phase 7: budget tracking, bills, kids activities log',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS budget_items (
+          id TEXT PRIMARY KEY,
+          type TEXT NOT NULL CHECK(type IN ('bill','subscription','expense','income')),
+          name TEXT NOT NULL,
+          amount REAL NOT NULL,
+          category TEXT,
+          frequency TEXT DEFAULT 'monthly' CHECK(frequency IN ('one_time','weekly','monthly','yearly')),
+          due_date INTEGER,
+          is_paid INTEGER DEFAULT 0,
+          auto_remind INTEGER DEFAULT 1,
+          notes TEXT,
+          created_at INTEGER DEFAULT (unixepoch()),
+          updated_at INTEGER DEFAULT (unixepoch())
+        );
+        CREATE INDEX IF NOT EXISTS idx_budget_type ON budget_items(type);
+        CREATE INDEX IF NOT EXISTS idx_budget_due ON budget_items(due_date);
+
+        CREATE TABLE IF NOT EXISTS kids_activity_log (
+          id TEXT PRIMARY KEY,
+          child_name TEXT NOT NULL,
+          activity TEXT NOT NULL,
+          date TEXT NOT NULL,
+          duration_minutes INTEGER,
+          notes TEXT,
+          created_at INTEGER DEFAULT (unixepoch())
+        );
+      `);
+    },
+  },
 ];
 
 export function runMigrations(): void {

@@ -234,7 +234,7 @@ function getToolInstructions(): string {
   return `
 TOOLS: Call tools via \`\`\`tool_call\n{"name":"TOOL","arguments":{...}}\n\`\`\` format. One tool per call. ALWAYS use tools for actions.
 
-Tools: manage_grocery({action,item,quantity,unit,category}), create_event({title,start_time,end_time,description,location,reminder_minutes}), get_calendar({start,end,family_member_id}), update_event({id,title,start_time,end_time,description,location}), delete_event({id,scope}), set_reminder({message,time,type,target_member}), manage_task({action,title,priority,status,due_date}), manage_chore({action,title,assigned_to,points}), manage_meals({action,date,meal_type,recipe,ingredients[]}), manage_activity({action,title,child_name,day_of_week[],start_time,end_time,location}), save_memory({topic,content,type,importance}), recall_memory({query,type}), manage_skill({action,name,type,trigger_phrases[],url}), get_family({}), get_usage({period}), get_weather({location}), get_forecast({location,days}), web_search({query}), get_briefing({}), run_workflow({steps:[{tool,args}]}), find_free_time({duration_minutes,start_date,end_date,preferred_time})
+Tools: manage_grocery({action,item,quantity,unit,category}), create_event({title,start_time,end_time,description,location,reminder_minutes}), get_calendar({start,end}), update_event({id,title,start_time,end_time}), delete_event({id}), set_reminder({message,time,type,target_member}), manage_task({action,title,priority,status,due_date}), manage_chore({action,title,assigned_to,points}), manage_meals({action,date,meal_type,recipe,ingredients[]}), manage_activity({action,title,child_name,day_of_week[],start_time,end_time,location}), save_memory({topic,content,type,importance}), recall_memory({query,type}), manage_skill({action,name,type,trigger_phrases[],url}), get_family({}), get_usage({period}), get_weather({location}), get_forecast({location,days}), web_search({query}), get_briefing({}), run_workflow({steps:[{tool,args}]}), find_free_time({duration_minutes,preferred_time}), suggest_recipe({dietary_restrictions,cuisine,meal_type,servings}), manage_budget({action,name,amount,category,type,frequency,due_date})
 `;
 }
 
@@ -262,7 +262,8 @@ function parseToolCall(content: string): { name: string; arguments: Record<strin
     const knownTools = ['save_memory', 'recall_memory', 'manage_task', 'get_calendar', 'create_event',
       'update_event', 'delete_event', 'set_reminder', 'manage_grocery', 'manage_meals',
       'manage_activity', 'manage_chore', 'manage_skill', 'get_family', 'get_usage',
-      'get_weather', 'get_forecast', 'web_search', 'get_briefing', 'run_workflow', 'find_free_time'];
+      'get_weather', 'get_forecast', 'web_search', 'get_briefing', 'run_workflow', 'find_free_time',
+      'suggest_recipe', 'manage_budget'];
     if (knownTools.includes(toolName)) {
       const args: Record<string, unknown> = {};
       // Parse Python kwargs: key='value' or key="value" or key=value
