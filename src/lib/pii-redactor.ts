@@ -39,6 +39,7 @@ interface SessionCache {
 }
 
 const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
+const MAX_CACHE_SIZE = 500; // Evict when cache exceeds this size
 
 let sessionCache: SessionCache = {
   mappings: new Map(),
@@ -66,6 +67,16 @@ function refreshFamilyNames(): void {
 function getOrCreateToken(original: string, prefix: string): string {
   const existing = sessionCache.mappings.get(original);
   if (existing) return existing;
+
+  // Evict oldest entries if cache exceeds max size
+  if (sessionCache.mappings.size >= MAX_CACHE_SIZE) {
+    const keysToDelete = Array.from(sessionCache.mappings.keys()).slice(0, Math.floor(MAX_CACHE_SIZE / 4));
+    for (const key of keysToDelete) {
+      const token = sessionCache.mappings.get(key);
+      sessionCache.mappings.delete(key);
+      if (token) sessionCache.reverseMappings.delete(token);
+    }
+  }
 
   sessionCache.counter++;
   const token = `<${prefix}_${sessionCache.counter}>`;

@@ -87,6 +87,15 @@ interface LLMResult {
   toolsUsed?: string[];
 }
 
+// ─── Context Sanitization ───
+
+// Strip tool_call patterns from injected context to prevent prompt injection
+function sanitizeContext(text: string): string {
+  return text
+    .replace(/```(?:tool_call|tool_code|tool|json)\s*\n/gi, '``` ')
+    .replace(/\{"name"\s*:\s*"(\w+)"\s*,\s*"arguments"/g, '{"_name": "$1", "_arguments"');
+}
+
 // ─── Context Builder ───
 
 function buildMemoryContext(userMessage: string): string {
@@ -212,7 +221,7 @@ function buildMemoryContext(userMessage: string): string {
   }
 
   if (sections.length === 0) return '';
-  return '\n--- VINEGAR MEMORY ---\n' + sections.join('\n') + '\n--- END MEMORY ---';
+  return sanitizeContext('\n--- VINEGAR MEMORY ---\n' + sections.join('\n') + '\n--- END MEMORY ---');
 }
 
 // ─── Tool Instructions for Text Mode ───
@@ -228,6 +237,9 @@ Tools: manage_grocery({action,item,quantity,unit,category}), create_event({title
 // ─── Tool Call Parser (handles LLM format variations) ───
 
 function parseToolCall(content: string): { name: string; arguments: Record<string, unknown> } | null {
+  // Reject if the content is just echoing back context (prompt injection defense)
+  if (/--- VINEGAR MEMORY ---/.test(content) || /--- END MEMORY ---/.test(content)) return null;
+
   // 1. Standard format: ```tool_call\n{JSON}\n```
   const jsonFenceMatch = content.match(/```(?:tool_call|tool_code|json|tool)\s*\n?([\s\S]*?)\n?```/);
   if (jsonFenceMatch) {

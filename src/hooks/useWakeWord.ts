@@ -35,6 +35,7 @@ export function useWakeWord(options: UseWakeWordOptions = {}): UseWakeWordReturn
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const sleepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isAwakeRef = useRef(false);
+  const isPassiveListeningRef = useRef(false);
 
   const resetSleepTimer = useCallback(() => {
     if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
@@ -102,8 +103,8 @@ export function useWakeWord(options: UseWakeWordOptions = {}): UseWakeWordReturn
     };
 
     recognition.onend = () => {
-      // Auto-restart for continuous passive listening
-      if (isPassiveListening) {
+      // Auto-restart for continuous passive listening (use ref to avoid stale closure)
+      if (isPassiveListeningRef.current) {
         try {
           setTimeout(() => {
             if (recognitionRef.current) {
@@ -116,14 +117,16 @@ export function useWakeWord(options: UseWakeWordOptions = {}): UseWakeWordReturn
 
     recognitionRef.current = recognition;
     setIsPassiveListening(true);
+    isPassiveListeningRef.current = true;
 
     try {
       recognition.start();
     } catch {}
-  }, [wakeWord, continuous, wake, resetSleepTimer, isPassiveListening]);
+  }, [wakeWord, continuous, wake, resetSleepTimer]);
 
   const stopPassiveListening = useCallback(() => {
     setIsPassiveListening(false);
+    isPassiveListeningRef.current = false;
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch {}
       recognitionRef.current = null;

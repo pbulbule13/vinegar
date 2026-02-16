@@ -13,6 +13,11 @@ import { db } from "@/lib/db";
 
 const EURI_BASE_URL = "https://api.euron.one/api/v1/euri";
 
+// Rough token estimation for stream usage logging (4 chars per token)
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
 function buildMemoryContext(userMessage: string): string {
   const sections: string[] = [];
   try {
@@ -70,8 +75,9 @@ export async function POST(request: Request) {
       }),
     ];
 
-    // Log user question (original, not redacted)
-    logConversation({ role: 'user', content: lastUserMsg, source: 'stream' });
+    // Log user question (redacted for PII safety)
+    const { redacted: redactedForLog } = redact(lastUserMsg);
+    logConversation({ role: 'user', content: redactedForLog, source: 'stream' });
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);
@@ -129,9 +135,16 @@ export async function POST(request: Request) {
         } catch (err) {
           controller.error(err);
         } finally {
-          // Log the full assistant response
+          // Log the full assistant response and usage
           if (fullResponse) {
             logConversation({ role: 'assistant', content: fullResponse, model, source: 'stream' });
+            // Log estimated usage for budget tracking
+            try {
+              const estIn = estimateTokens(systemPrompt + messages.map(m => m.content).join(''));
+              const estOut = estimateTokens(fullResponse);
+              db.prepare('INSERT INTO usage_logs (model, text_input_tokens, text_output_tokens, cost, source, created_at) VALUES (?, ?, ?, 0, ?, unixepoch())')
+                .run(model, estIn, estOut, 'stream');
+            } catch {}
           }
           controller.close();
         }

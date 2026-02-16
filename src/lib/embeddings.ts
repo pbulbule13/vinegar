@@ -119,13 +119,22 @@ export async function semanticSearch(
 ): Promise<Array<{ id: string; topic: string; content: string; type: string; score: number }>> {
   const queryVector = await generateEmbedding(query);
 
-  // Get all embeddings for scoring
+  // Pre-filter by keyword match, then score with cosine similarity
+  const keywords = query.toLowerCase().split(/\s+/).filter(k => k.length > 2);
+  const keywordFilter = keywords.length > 0
+    ? `WHERE (${keywords.map(() => '(m.content LIKE ? OR m.topic LIKE ? OR m.tags LIKE ?)').join(' OR ')})`
+    : '';
+  const keywordParams = keywords.flatMap(k => [`%${k}%`, `%${k}%`, `%${k}%`]);
+
   const rows = db.prepare(`
     SELECT m.id, m.topic, m.content, m.type, m.importance, m.created_at,
            me.embedding
     FROM memories m
     INNER JOIN memory_embeddings me ON m.id = me.memory_id
-  `).all() as Array<{
+    ${keywordFilter}
+    ORDER BY m.created_at DESC
+    LIMIT 100
+  `).all(...keywordParams) as Array<{
     id: string; topic: string; content: string; type: string;
     importance: string; created_at: number; embedding: string;
   }>;

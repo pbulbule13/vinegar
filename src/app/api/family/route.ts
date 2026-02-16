@@ -36,14 +36,15 @@ export async function POST(request: Request) {
       const member = db.prepare('SELECT id, name, role FROM family_members WHERE id = ?').get(memberId);
       if (!member) return NextResponse.json({ error: 'Member not found' }, { status: 404 });
 
-      // If parent with PIN, verify using bcrypt
-      if (body.pin && (member as Record<string, unknown>).role === 'parent') {
-        const stored = db.prepare('SELECT pin_hash FROM family_members WHERE id = ?').get(memberId) as { pin_hash: string | null };
-        if (stored?.pin_hash) {
-          const isValid = await bcrypt.compare(String(body.pin), stored.pin_hash);
-          if (!isValid) {
-            return NextResponse.json({ error: 'Invalid PIN' }, { status: 401 });
-          }
+      // If member has a PIN set, require and verify it
+      const stored = db.prepare('SELECT pin_hash FROM family_members WHERE id = ?').get(memberId) as { pin_hash: string | null };
+      if (stored?.pin_hash) {
+        if (!body.pin) {
+          return NextResponse.json({ error: 'PIN required' }, { status: 401 });
+        }
+        const isValid = await bcrypt.compare(String(body.pin), stored.pin_hash);
+        if (!isValid) {
+          return NextResponse.json({ error: 'Invalid PIN' }, { status: 401 });
         }
       }
 

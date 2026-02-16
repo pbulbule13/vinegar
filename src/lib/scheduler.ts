@@ -92,6 +92,8 @@ registerTool('get_calendar', 'Read calendar events for a date range', (args) => 
   const startTs = start ? Math.floor(new Date(start as string).getTime() / 1000) : dayStart;
   const endTs = end ? Math.floor(new Date(end as string).getTime() / 1000) : dayEnd;
 
+  if (isNaN(startTs) || isNaN(endTs)) return { success: false, error: 'Invalid date format. Use ISO format (e.g., 2026-02-15)' };
+
   let query = 'SELECT id, title, start_time, end_time, all_day, location, source FROM calendar_events WHERE end_time >= ? AND start_time <= ?';
   const params: unknown[] = [startTs, endTs];
 
@@ -125,6 +127,8 @@ registerTool('create_event', 'Create a new calendar event', (args) => {
 
   const startTs = Math.floor(new Date(start_time).getTime() / 1000);
   const endTs = Math.floor(new Date(end_time).getTime() / 1000);
+
+  if (isNaN(startTs) || isNaN(endTs)) return { success: false, error: 'Invalid date format. Use ISO format (e.g., 2026-02-15T10:00:00)' };
 
   const id = `evt_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 9)}`;
   db.prepare(`
@@ -190,6 +194,7 @@ registerTool('set_reminder', 'Create a reminder or alarm', (args) => {
     fireTime = Math.floor(Date.now() / 1000) + seconds;
   } else {
     fireTime = Math.floor(new Date(time).getTime() / 1000);
+    if (isNaN(fireTime)) return { success: false, error: 'Invalid time format. Use ISO date or "in X minutes/hours/days"' };
   }
 
   // Resolve target member
