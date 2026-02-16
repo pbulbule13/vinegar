@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+.env.local
+usage-data.json
+memory-data.json
+tasks-data.json
+next-env.d.ts
+*.db
+*.db-shm
+*.db-wal
+*.apk
+backups/
+tsconfig.tsbuildinfo

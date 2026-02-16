@@ -1,0 +1,296 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+
+html { overscroll-behavior: none; }
+body { background: #050508; color: #e0e0e8; overflow-x: hidden; }
+
+/* ─── Vinegar Logo ─── */
+.vinegar-logo {
+  background: linear-gradient(135deg, rgba(245,158,11,0.2) 0%, rgba(245,158,11,0.05) 100%);
+  border: 1px solid rgba(245,158,11,0.3);
+  color: #f59e0b;
+  box-shadow: 0 0 20px rgba(245,158,11,0.1);
+}
+
+/* ─── Nav Buttons ─── */
+.nav-button {
+  padding: 6px;
+  border-radius: 8px;
+  color: rgba(255,255,255,0.3);
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+.nav-button:hover {
+  color: rgba(245,158,11,0.7);
+  background: rgba(245,158,11,0.05);
+  border-color: rgba(245,158,11,0.15);
+}
+
+/* ─── Orb ─── */
+.vinegar-orb {
+  position: relative;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes orb-breathe {
+  0%, 100% {
+    box-shadow:
+      0 0 40px rgba(245,158,11,0.08),
+      0 0 80px rgba(245,158,11,0.04),
+      inset 0 0 30px rgba(245,158,11,0.02);
+    border-color: rgba(255,255,255,0.06);
+  }
+  50% {
+    box-shadow:
+      0 0 60px rgba(245,158,11,0.12),
+      0 0 100px rgba(245,158,11,0.06),
+      inset 0 0 40px rgba(245,158,11,0.04);
+    border-color: rgba(255,255,255,0.1);
+  }
+}
+
+.orb-idle {
+  background: radial-gradient(circle at 40% 40%, rgba(255,255,255,0.03) 0%, rgba(5,5,8,1) 70%);
+  border: 1.5px solid rgba(255,255,255,0.06);
+  animation: orb-breathe 5s ease-in-out infinite;
+}
+
+@keyframes orb-listen-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 50px rgba(245,158,11,0.3),
+      0 0 100px rgba(245,158,11,0.15),
+      inset 0 0 40px rgba(245,158,11,0.08);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow:
+      0 0 70px rgba(245,158,11,0.5),
+      0 0 140px rgba(245,158,11,0.2),
+      inset 0 0 50px rgba(245,158,11,0.12);
+    transform: scale(1.03);
+  }
+}
+
+.orb-listening {
+  background: radial-gradient(circle at 40% 40%, rgba(245,158,11,0.06) 0%, rgba(5,5,8,1) 70%);
+  border: 1.5px solid rgba(245,158,11,0.4);
+  animation: orb-listen-pulse 1.5s ease-in-out infinite;
+}
+
+.orb-speaking {
+  background: radial-gradient(circle at 40% 40%, rgba(245,158,11,0.1) 0%, rgba(5,5,8,1) 70%);
+  border: 1.5px solid rgba(245,158,11,0.5);
+  box-shadow:
+    0 0 60px rgba(245,158,11,0.4),
+    0 0 120px rgba(245,158,11,0.2),
+    inset 0 0 50px rgba(245,158,11,0.1);
+}
+
+.orb-awake {
+  background: radial-gradient(circle at 40% 40%, rgba(245,158,11,0.04) 0%, rgba(5,5,8,1) 70%);
+  border: 1.5px solid rgba(245,158,11,0.3);
+  box-shadow:
+    0 0 40px rgba(245,158,11,0.2),
+    0 0 80px rgba(245,158,11,0.1);
+  animation: orb-listen-pulse 2s ease-in-out infinite;
+}
+
+/* ─── Orbit Rings ─── */
+@keyframes ring-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+.orbit-ring-outer {
+  position: absolute;
+  inset: -20px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  border-top-color: rgba(245,158,11,0.2);
+  border-right-color: rgba(245,158,11,0.05);
+  animation: ring-spin 10s linear infinite;
+  pointer-events: none;
+}
+
+.orbit-ring-inner {
+  position: absolute;
+  inset: -36px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  border-bottom-color: rgba(147,51,234,0.12);
+  border-left-color: rgba(147,51,234,0.03);
+  animation: ring-spin 16s linear infinite reverse;
+  pointer-events: none;
+}
+
+.orbit-ring-glow {
+  position: absolute;
+  inset: -50px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  border-top-color: rgba(6,182,212,0.06);
+  animation: ring-spin 24s linear infinite;
+  pointer-events: none;
+}
+
+/* ─── Message Bubbles ─── */
+.user-bubble {
+  background: rgba(245,158,11,0.08);
+  border: 1px solid rgba(245,158,11,0.15);
+  border-radius: 16px 16px 4px 16px;
+  padding: 12px 16px;
+  color: rgba(255,255,255,0.85);
+}
+
+.vinegar-bubble {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 16px 16px 16px 4px;
+  padding: 12px 16px;
+  color: rgba(255,255,255,0.75);
+  backdrop-filter: blur(10px);
+}
+
+/* ─── Message Animation ─── */
+@keyframes msg-appear {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.message-appear { animation: msg-appear 0.3s ease-out; }
+
+/* ─── Typing Dots ─── */
+.typing-dots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.typing-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(245,158,11,0.4);
+  animation: typing-bounce 1.4s ease-in-out infinite;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typing-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.3; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+/* ─── Input Container ─── */
+.input-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  transition: all 0.3s;
+}
+.input-container:focus-within {
+  border-color: rgba(245,158,11,0.25);
+  background: rgba(255,255,255,0.04);
+  box-shadow: 0 0 30px rgba(245,158,11,0.05);
+}
+
+/* ─── Send Button ─── */
+.send-button {
+  padding: 10px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(245,158,11,0.15) 0%, rgba(245,158,11,0.08) 100%);
+  border: 1px solid rgba(245,158,11,0.2);
+  color: #f59e0b;
+  transition: all 0.2s;
+  margin-right: 2px;
+}
+.send-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(245,158,11,0.25) 0%, rgba(245,158,11,0.15) 100%);
+  box-shadow: 0 0 20px rgba(245,158,11,0.15);
+}
+.send-button:disabled {
+  opacity: 0.2;
+  cursor: not-allowed;
+}
+
+/* ─── Model Picker ─── */
+.model-picker {
+  background: rgba(10,10,15,0.95);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  backdrop-filter: blur(20px);
+  overflow: hidden;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* ─── Legacy orb classes (keep for compatibility) ─── */
+.vinegar-orb-idle { @apply orb-idle; }
+.vinegar-orb-listening { @apply orb-listening; }
+.vinegar-orb-speaking { @apply orb-speaking; }
+
+/* ─── Scrollbar thin variant ─── */
+.scrollbar-thin::-webkit-scrollbar { width: 3px; }
+
+/* ─── Cost badge ─── */
+.cost-badge {
+  background: rgba(245,158,11,0.06);
+  border: 1px solid rgba(245,158,11,0.15);
+  color: #f59e0b;
+}
+
+/* ─── Transcript bubble ─── */
+.transcript-bubble {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(245,158,11,0.1);
+  border-radius: 12px;
+}
+
+/* ─── Fade up (legacy) ─── */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fade-up 0.3s ease-out; }
+
+/* ─── Orbit ring legacy ─── */
+.orbit-ring {
+  position: absolute;
+  inset: -12px;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  border-top-color: rgba(245,158,11,0.3);
+  border-right-color: rgba(245,158,11,0.08);
+  animation: ring-spin 8s linear infinite;
+  pointer-events: none;
+}
+
+.orbit-ring-2 {
+  position: absolute;
+  inset: -24px;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  border-bottom-color: rgba(245,158,11,0.15);
+  border-left-color: rgba(245,158,11,0.05);
+  animation: ring-spin 14s linear infinite reverse;
+  pointer-events: none;
+}
+
+/* ─── Glow effects ─── */
+.glow-soft { box-shadow: 0 0 15px rgba(245,158,11,0.12); }
+.glow-medium { box-shadow: 0 0 20px rgba(245,158,11,0.25); }
+.glow-large { box-shadow: 0 0 30px rgba(245,158,11,0.4); }
