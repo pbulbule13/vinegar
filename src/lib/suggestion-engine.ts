@@ -150,6 +150,29 @@ function checkWeatherAlerts(): void {
   } catch {}
 }
 
+function checkUpcomingBills(): void {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const threeDays = now + (3 * 86400);
+
+    const bills = db.prepare(`
+      SELECT name, amount, due_date FROM budget_items
+      WHERE is_paid = 0 AND type IN ('bill', 'subscription')
+        AND due_date IS NOT NULL AND due_date BETWEEN ? AND ?
+      LIMIT 3
+    `).all(now, threeDays) as Array<{ name: string; amount: number; due_date: number }>;
+
+    for (const b of bills) {
+      const daysUntil = Math.ceil((b.due_date - now) / 86400);
+      addSuggestion(
+        'reminder',
+        `Bill "${b.name}" ($${b.amount}) is due in ${daysUntil} day${daysUntil > 1 ? 's' : ''}.`,
+        daysUntil <= 1 ? 'high' : 'medium'
+      );
+    }
+  } catch {}
+}
+
 // ─── Main scan function (called by background worker) ───
 
 export function scanForSuggestions(): void {
@@ -158,4 +181,5 @@ export function scanForSuggestions(): void {
   checkGroceryAfterMealPlan();
   checkPendingChores();
   checkWeatherAlerts();
+  checkUpcomingBills();
 }

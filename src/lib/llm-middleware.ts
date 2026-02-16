@@ -220,7 +220,28 @@ function buildMemoryContext(userMessage: string): string {
     } catch {}
   }
 
-  // Weather context: inject current date/time for time-aware responses
+  // Budget keywords → inject upcoming bills
+  const budgetKeywords = /\b(budget|bill|bills|expense|subscription|payment|due|money|cost|spend|spending)\b/i;
+  if (budgetKeywords.test(userMessage)) {
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      const upcoming = db.prepare(`
+        SELECT name, amount, due_date FROM budget_items
+        WHERE is_paid = 0 AND due_date IS NOT NULL AND due_date BETWEEN ? AND ?
+        ORDER BY due_date ASC LIMIT 5
+      `).all(now, now + (30 * 86400)) as Array<{ name: string; amount: number; due_date: number }>;
+
+      if (upcoming.length > 0) {
+        sections.push('[Upcoming Bills]');
+        for (const b of upcoming) {
+          const due = new Date(b.due_date * 1000).toLocaleDateString();
+          sections.push(`- ${b.name}: $${b.amount} (due ${due})`);
+        }
+      }
+    } catch {}
+  }
+
+  // Inject current date/time for time-aware responses
   const now = new Date();
   sections.unshift(`[Now] ${now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
 
