@@ -178,6 +178,33 @@ async function executeSkill(skill: { id: string; name: string; type: string; con
         }
         break;
       }
+      case 'composite': {
+        // Compound skill: chain multiple tool calls in sequence
+        const steps = config.steps as Array<{ tool: string; args?: Record<string, unknown> }>;
+        if (!steps || !Array.isArray(steps) || steps.length === 0) {
+          return { success: false, error: 'Composite skill has no steps configured' };
+        }
+        if (steps.length > 10) {
+          return { success: false, error: 'Composite skills limited to 10 steps' };
+        }
+
+        const results: unknown[] = [];
+        for (const step of steps) {
+          if (!step.tool) continue;
+          // Allow args to reference $prev (result of previous step)
+          const stepArgs = { ...(step.args || {}), ...(args || {}) };
+          if (results.length > 0) {
+            stepArgs._previous_result = results[results.length - 1];
+          }
+          const stepResult = await executeTool(step.tool, stepArgs);
+          results.push(stepResult);
+          if (!stepResult.success) {
+            return { success: false, error: `Step "${step.tool}" failed: ${stepResult.error}`, data: { completedSteps: results.length - 1, results } };
+          }
+        }
+        result = { steps: results.length, results };
+        break;
+      }
       default:
         return { success: false, error: `Unsupported skill type: ${skill.type}` };
     }
@@ -365,6 +392,122 @@ registerTool('get_usage', 'Get token usage statistics and cost summary', (args) 
       } : undefined,
       estimatedCost: '$0.00 (Euri free tier)',
     },
+  };
+});
+
+// ─── Workflow Tool (compound tool calls) ───
+
+registerTool('run_workflow', 'Run multiple tools in sequence as a workflow. Use for compound requests like "morning routine", "plan my day", etc.', async (args) => {
+  const { steps } = args as { steps?: Array<{ tool: string; args?: Record<string, unknown> }> };
+
+  if (!steps || !Array.isArray(steps) || steps.length === 0) {
+    return { success: false, error: 'steps array required: [{tool: "tool_name", args: {...}}, ...]' };
+  }
+  if (steps.length > 5) {
+    return { success: false, error: 'Workflows limited to 5 steps' };
+  }
+
+  const results: Array<{ tool: string; result: unknown }> = [];
+  for (const step of steps) {
+    if (!step.tool || typeof step.tool !== 'string') continue;
+    const result = await executeTool(step.tool, step.args || {});
+    results.push({ tool: step.tool, result });
+    if (!result.success) break;
+  }
+
+  const allSuccess = results.every(r => (r.result as { success: boolean }).success);
+  const messages = results
+    .map(r => (r.result as { message?: string }).message)
+    .filter(Boolean);
+
+  return {
+    success: allSuccess,
+    data: { steps: results.length, results },
+    message: messages.join('\n'),
+  };
+});
+
+// ─── Find Free Time Tool (Natural Language Scheduling) ───
+
+registerTool('find_free_time', 'Find available time slots in calendar. Use when asked "find me time to...", "when am I free", "schedule X for me".', (args) => {
+  const { duration_minutes = 60, start_date, end_date, preferred_time } = args as {
+    duration_minutes?: number; start_date?: string; end_date?: string; preferred_time?: string;
+  };
+
+  const now = Math.floor(Date.now() / 1000);
+  const durationSec = Math.min(Math.max(15, duration_minutes), 480) * 60; // 15min-8hr
+  const startTs = start_date ? Math.floor(new Date(start_date).getTime() / 1000) : now;
+  const endTs = end_date ? Math.floor(new Date(end_date).getTime() / 1000) : startTs + (7 * 86400); // Default: next 7 days
+
+  if (isNaN(startTs) || isNaN(endTs)) return { success: false, error: 'Invalid date format' };
+
+  // Get all events in the range
+  const events = db.prepare(`
+    SELECT start_time, end_time FROM calendar_events
+    WHERE end_time > ? AND start_time < ?
+    ORDER BY start_time ASC
+  `).all(startTs, endTs) as Array<{ start_time: number; end_time: number }>;
+
+  // Business hours: 8am-9pm (configurable via preferred_time)
+  let dayStart = 8, dayEnd = 21;
+  if (preferred_time === 'morning') { dayStart = 6; dayEnd = 12; }
+  else if (preferred_time === 'afternoon') { dayStart = 12; dayEnd = 17; }
+  else if (preferred_time === 'evening') { dayStart = 17; dayEnd = 22; }
+
+  // Find gaps between events within business hours
+  const freeSlots: Array<{ start: string; end: string; duration_minutes: number }> = [];
+  const searchStart = Math.max(startTs, now);
+
+  for (let dayOffset = 0; dayOffset < 7 && freeSlots.length < 5; dayOffset++) {
+    const dayBase = searchStart + (dayOffset * 86400);
+    const dayDate = new Date(dayBase * 1000);
+    dayDate.setHours(dayStart, 0, 0, 0);
+    const windowStart = Math.floor(dayDate.getTime() / 1000);
+    dayDate.setHours(dayEnd, 0, 0, 0);
+    const windowEnd = Math.floor(dayDate.getTime() / 1000);
+
+    if (windowEnd <= now) continue;
+
+    // Get events for this day
+    const dayEvents = events.filter(e => e.start_time < windowEnd && e.end_time > windowStart);
+    dayEvents.sort((a, b) => a.start_time - b.start_time);
+
+    let cursor = Math.max(windowStart, now);
+    for (const event of dayEvents) {
+      if (event.start_time - cursor >= durationSec) {
+        freeSlots.push({
+          start: new Date(cursor * 1000).toISOString(),
+          end: new Date(event.start_time * 1000).toISOString(),
+          duration_minutes: Math.round((event.start_time - cursor) / 60),
+        });
+        if (freeSlots.length >= 5) break;
+      }
+      cursor = Math.max(cursor, event.end_time);
+    }
+
+    // Check remaining time after last event
+    if (cursor < windowEnd && windowEnd - cursor >= durationSec && freeSlots.length < 5) {
+      freeSlots.push({
+        start: new Date(cursor * 1000).toISOString(),
+        end: new Date(windowEnd * 1000).toISOString(),
+        duration_minutes: Math.round((windowEnd - cursor) / 60),
+      });
+    }
+  }
+
+  if (freeSlots.length === 0) {
+    return { success: true, data: { slots: [] }, message: 'No free slots found in the next 7 days matching your criteria.' };
+  }
+
+  const summary = freeSlots.map(s => {
+    const start = new Date(s.start);
+    return `${start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} ${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${s.duration_minutes} min)`;
+  }).join('\n');
+
+  return {
+    success: true,
+    data: { count: freeSlots.length, slots: freeSlots },
+    message: `Found ${freeSlots.length} free slot${freeSlots.length > 1 ? 's' : ''}:\n${summary}`,
   };
 });
 
@@ -632,6 +775,43 @@ export function getToolSchemas(): Array<{ type: string; name: string; descriptio
       parameters: {
         type: 'object',
         properties: {},
+      },
+    },
+    {
+      type: 'function',
+      name: 'run_workflow',
+      description: 'Run multiple tools in sequence. Use for compound requests.',
+      parameters: {
+        type: 'object',
+        properties: {
+          steps: {
+            type: 'array',
+            description: 'Array of {tool, args} objects to run in sequence',
+            items: {
+              type: 'object',
+              properties: {
+                tool: { type: 'string', description: 'Tool name' },
+                args: { type: 'object', description: 'Tool arguments' },
+              },
+              required: ['tool'],
+            },
+          },
+        },
+        required: ['steps'],
+      },
+    },
+    {
+      type: 'function',
+      name: 'find_free_time',
+      description: 'Find available time slots in calendar. Use when asked "find me time to...", "when am I free".',
+      parameters: {
+        type: 'object',
+        properties: {
+          duration_minutes: { type: 'number', description: 'How many minutes needed (default 60)' },
+          start_date: { type: 'string', description: 'Start search from (ISO date)' },
+          end_date: { type: 'string', description: 'Search until (ISO date)' },
+          preferred_time: { type: 'string', description: 'morning, afternoon, evening, or any' },
+        },
       },
     },
   ];

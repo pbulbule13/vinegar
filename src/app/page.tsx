@@ -7,8 +7,9 @@ import { useWakeWord } from "@/hooks/useWakeWord";
 import { tryOfflineResponse } from "@/lib/offline-commands";
 import {
   Mic, MicOff, Power, Zap, Brain, Send, Loader2, ChevronDown,
-  LayoutDashboard, Settings, Volume2, WifiOff, Wifi, Moon, Sun,
+  LayoutDashboard, Settings, Volume2, WifiOff, Bell,
 } from "lucide-react";
+import { useNotifications } from "@/hooks/useNotifications";
 import { SettingsModal } from "@/components/settings-modal";
 import Link from "next/link";
 
@@ -60,6 +61,10 @@ export default function VinegarHome() {
   const [hasVoiceKey, setHasVoiceKey] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  // Real-time notifications (reminders + suggestions)
+  const { notifications, unreadCount, dismiss, dismissAll } = useNotifications();
 
   // Check if voice key is available
   useEffect(() => {
@@ -194,7 +199,7 @@ export default function VinegarHome() {
     } catch {}
   };
 
-  // Text chat with offline-first approach
+  // Text chat with streaming SSE + offline-first approach
   const handleSendText = async () => {
     const text = textInput.trim();
     if (!text || isTyping) return;
@@ -219,36 +224,94 @@ export default function VinegarHome() {
       return;
     }
 
-    // Need LLM
+    // Need LLM - use streaming SSE
     setIsTyping(true);
     const newHistory = [...chatHistory, { role: "user" as const, content: text }];
     setChatHistory(newHistory);
+    const streamMsgId = `vinegar_stream_${Date.now()}`;
 
     try {
-      const res = await fetch("/api/chat", {
+      const res = await fetch("/api/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: newHistory, model: selectedModel }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to get response");
 
-      const aiText = data.content || "I couldn't generate a response.";
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: "Stream failed" }));
+        throw new Error(data.error || "Failed to get response");
+      }
+
+      // Add empty message that we'll stream into
       setMessages((prev) => [
         ...prev,
-        { id: `vinegar_text_${Date.now()}`, role: "vinegar", text: aiText, timestamp: new Date(), source: "text" },
+        { id: streamMsgId, role: "vinegar", text: "", timestamp: new Date(), source: "text" },
       ]);
-      const updatedHistory = [...newHistory, { role: "assistant" as const, content: aiText }];
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No response body");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let fullResponse = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.content) {
+              fullResponse += parsed.content;
+              // Update the streaming message in place
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === streamMsgId ? { ...m, text: fullResponse } : m
+                )
+              );
+            }
+          } catch {}
+        }
+      }
+
+      // Finalize
+      if (!fullResponse) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === streamMsgId ? { ...m, text: "I couldn't generate a response." } : m
+          )
+        );
+      }
+
+      const updatedHistory = [...newHistory, { role: "assistant" as const, content: fullResponse }];
       setChatHistory(updatedHistory.slice(-20));
 
-      // Always speak back the response
-      speakText(aiText);
+      // Speak the complete response
+      if (fullResponse) speakText(fullResponse);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Failed to connect";
-      setMessages((prev) => [
-        ...prev,
-        { id: `error_${Date.now()}`, role: "vinegar", text: `Connection issue: ${errorMsg}`, timestamp: new Date(), source: "text" },
-      ]);
+      // If we already added the streaming message, update it with error
+      setMessages((prev) => {
+        const hasStreamMsg = prev.some((m) => m.id === streamMsgId);
+        if (hasStreamMsg) {
+          return prev.map((m) =>
+            m.id === streamMsgId ? { ...m, text: `Connection issue: ${errorMsg}` } : m
+          );
+        }
+        return [
+          ...prev,
+          { id: `error_${Date.now()}`, role: "vinegar", text: `Connection issue: ${errorMsg}`, timestamp: new Date(), source: "text" },
+        ];
+      });
     } finally {
       setIsTyping(false);
     }
@@ -299,6 +362,20 @@ export default function VinegarHome() {
               {wakeWordEnabled ? "WAKE ON" : "WAKE OFF"}
             </button>
 
+            {/* Notification bell */}
+            <button
+              onClick={() => setShowNotifications(!showNotifications)}
+              className="nav-button relative"
+              title="Notifications"
+            >
+              <Bell className="w-4 h-4" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-amber-500 rounded-full text-[8px] font-bold text-black flex items-center justify-center">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </button>
+
             <Link href="/dashboard" className="nav-button" title="Dashboard">
               <LayoutDashboard className="w-4 h-4" />
             </Link>
@@ -309,6 +386,52 @@ export default function VinegarHome() {
           </div>
         </div>
       </header>
+
+      {/* Notification Panel */}
+      {showNotifications && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)} />
+          <div className="fixed top-14 right-4 z-50 w-80 max-h-96 overflow-y-auto rounded-xl border border-white/10 bg-[#0a0a0f]/95 backdrop-blur-xl shadow-2xl">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
+              <span className="text-xs font-mono text-white/50 tracking-wider">NOTIFICATIONS</span>
+              {unreadCount > 0 && (
+                <button onClick={dismissAll} className="text-[10px] text-amber-400/60 hover:text-amber-400">
+                  Dismiss all
+                </button>
+              )}
+            </div>
+            {notifications.filter(n => !n.dismissed).length === 0 ? (
+              <div className="px-4 py-8 text-center text-xs text-white/20">No notifications</div>
+            ) : (
+              notifications.filter(n => !n.dismissed).map(n => (
+                <div
+                  key={n.id}
+                  className={`px-4 py-3 border-b border-white/5 hover:bg-white/5 transition-colors ${
+                    n.priority === "high" ? "border-l-2 border-l-amber-500" : ""
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1">
+                      <span className={`text-[9px] font-mono uppercase tracking-wider ${
+                        n.type === "reminder" ? "text-amber-400/60" : "text-cyan-400/60"
+                      }`}>
+                        {n.type}
+                      </span>
+                      <p className="text-xs text-white/70 mt-0.5">{n.message}</p>
+                    </div>
+                    <button
+                      onClick={() => dismiss(n.id)}
+                      className="text-white/20 hover:text-white/50 text-xs mt-0.5"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </>
+      )}
 
       {/* Main Content */}
       <main className="relative z-10 flex-1 flex flex-col items-center px-4 sm:px-8">
