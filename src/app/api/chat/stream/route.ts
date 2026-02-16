@@ -1,6 +1,7 @@
 /**
  * Streaming chat endpoint.
  * Returns Server-Sent Events (SSE) for progressive text rendering.
+ * Includes offline command interception, tool instructions, and PII handling.
  */
 
 import { cookies } from "next/headers";
@@ -9,13 +10,22 @@ import { VINEGAR_SYSTEM_PROMPT } from "@/lib/vinegar-context";
 import { redact, rehydrate } from "@/lib/pii-redactor";
 import { checkDailyBudget, selectModel } from "@/lib/token-budget";
 import { logConversation } from "@/lib/conversation-logger";
+import { tryOfflineResponse } from "@/lib/offline-commands";
 import { db } from "@/lib/db";
+import '@/lib/init';
 
 const EURI_BASE_URL = "https://api.euron.one/api/v1/euri";
 
-// Rough token estimation for stream usage logging (4 chars per token)
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+function getToolInstructions(): string {
+  return `
+TOOLS: Call tools via \`\`\`tool_call\n{"name":"TOOL","arguments":{...}}\n\`\`\` format. One tool per call. ALWAYS use tools for actions.
+
+Tools: manage_grocery({action,item,quantity,unit,category}), create_event({title,start_time,end_time,description,location,reminder_minutes}), get_calendar({start,end,family_member_id}), update_event({id,title,start_time,end_time,description,location}), delete_event({id,scope}), set_reminder({message,time,type,target_member}), manage_task({action,title,priority,status,due_date}), manage_chore({action,title,assigned_to,points}), manage_meals({action,date,meal_type,recipe,ingredients[]}), manage_activity({action,title,child_name,day_of_week[],start_time,end_time,location}), save_memory({topic,content,type,importance}), recall_memory({query,type}), manage_skill({action,name,type,trigger_phrases[],url}), get_family({}), get_usage({period}), get_weather({location}), get_forecast({location,days}), web_search({query}), get_briefing({})
+`;
 }
 
 function buildMemoryContext(userMessage: string): string {
@@ -60,9 +70,29 @@ export async function POST(request: Request) {
 
     const { messages, model: requestedModel } = parsed.data;
     const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+
+    // Check offline commands first - saves tokens
+    const offlineResult = tryOfflineResponse(lastUserMsg);
+    if (offlineResult) {
+      logConversation({ role: 'user', content: lastUserMsg, source: 'offline' });
+      logConversation({ role: 'assistant', content: offlineResult.response, source: 'offline', tokensIn: 0, tokensOut: 0 });
+      const encoder = new TextEncoder();
+      const offlineStream = new ReadableStream({
+        start(ctrl) {
+          ctrl.enqueue(encoder.encode(`data: ${JSON.stringify({ content: offlineResult.response })}\n\n`));
+          ctrl.enqueue(encoder.encode('data: [DONE]\n\n'));
+          ctrl.close();
+        },
+      });
+      return new Response(offlineStream, {
+        headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
+      });
+    }
+
     const model = selectModel(lastUserMsg, requestedModel || 'gemini-2.5-flash');
     const memoryContext = buildMemoryContext(lastUserMsg);
-    const systemPrompt = `${VINEGAR_SYSTEM_PROMPT}${memoryContext}`;
+    const toolInstructions = getToolInstructions();
+    const systemPrompt = `${VINEGAR_SYSTEM_PROMPT}${toolInstructions}${memoryContext}`;
 
     const apiMessages = [
       { role: 'system', content: systemPrompt },

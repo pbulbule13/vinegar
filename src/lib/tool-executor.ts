@@ -590,5 +590,49 @@ export function getToolSchemas(): Array<{ type: string; name: string; descriptio
         },
       },
     },
+    {
+      type: 'function',
+      name: 'get_weather',
+      description: 'Get current weather for a location. Use when asked about weather, temperature, or conditions.',
+      parameters: {
+        type: 'object',
+        properties: {
+          location: { type: 'string', description: 'City name (defaults to configured city)' },
+        },
+      },
+    },
+    {
+      type: 'function',
+      name: 'get_forecast',
+      description: 'Get weather forecast for upcoming days (1-5 day forecast).',
+      parameters: {
+        type: 'object',
+        properties: {
+          location: { type: 'string', description: 'City name' },
+          days: { type: 'number', description: 'Number of days (1-5, default 3)' },
+        },
+      },
+    },
+    {
+      type: 'function',
+      name: 'web_search',
+      description: 'Search the web for information. Use for current events, facts, how-to questions, or anything not in memory.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query' },
+        },
+        required: ['query'],
+      },
+    },
+    {
+      type: 'function',
+      name: 'get_briefing',
+      description: 'Get a daily briefing with weather, calendar, tasks, and grocery list. Use for "morning briefing", "what\'s my day look like", "daily summary".',
+      parameters: {
+        type: 'object',
+        properties: {},
+      },
+    },
   ];
 }

@@ -15,11 +15,16 @@ if (!globalForInit.__vinegarInitialized) {
   // Register Phase 3 tools (grocery, meals, activities, chores, skills)
   require('./household-tools');
 
+  // Register Phase 5 tools (weather, search, briefing)
+  require('./weather-tools');
+  require('./search-tools');
+  require('./briefing-tools');
+
   // Start the scheduler (reminder evaluation loop)
   const { startScheduler } = require('./scheduler');
   startScheduler();
 
-  // Start background worker (embeddings, backups, recurring events)
+  // Start background worker (embeddings, backups, recurring events, briefing, suggestions)
   const { startBackgroundWorker } = require('./background-worker');
   startBackgroundWorker();
 

@@ -281,13 +281,7 @@ export function tryOfflineResponse(input: string): OfflineResult | null {
     return { response: "I'm here! What do you need?", shouldSpeak: true };
   }
 
-  // ── Weather fallback (no API yet) ──
-  if (/^(what('s| is) the weather|weather|is it (going to )?rain|temperature|how('s| is) the weather)/.test(lower)) {
-    return {
-      response: "I don't have a weather service connected yet. That's coming soon! For now, you can check your phone's weather app.",
-      shouldSpeak: true,
-    };
-  }
+  // Weather queries now handled by get_weather tool via LLM - don't intercept
 
   // ── Not handled offline ──
   return null;

@@ -12,7 +12,7 @@
 
 import { db, generateId } from './db';
 import { redact, rehydrate } from './pii-redactor';
-import { VINEGAR_SYSTEM_PROMPT } from './vinegar-context';
+import { VINEGAR_SYSTEM_PROMPT, CHILD_SAFE_PROMPT } from './vinegar-context';
 import { executeTool, getToolSchemas } from './tool-executor';
 import { checkDailyBudget, trimToFit, selectModel } from './token-budget';
 import { logToolUsage } from './episodes';
@@ -220,6 +220,10 @@ function buildMemoryContext(userMessage: string): string {
     } catch {}
   }
 
+  // Weather context: inject current date/time for time-aware responses
+  const now = new Date();
+  sections.unshift(`[Now] ${now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+
   if (sections.length === 0) return '';
   return sanitizeContext('\n--- VINEGAR MEMORY ---\n' + sections.join('\n') + '\n--- END MEMORY ---');
 }
@@ -230,7 +234,7 @@ function getToolInstructions(): string {
   return `
 TOOLS: Call tools via \`\`\`tool_call\n{"name":"TOOL","arguments":{...}}\n\`\`\` format. One tool per call. ALWAYS use tools for actions.
 
-Tools: manage_grocery({action,item,quantity,unit,category}), create_event({title,start_time,end_time,description,location,reminder_minutes}), get_calendar({start,end,family_member_id}), update_event({id,title,start_time,end_time,description,location}), delete_event({id,scope}), set_reminder({message,time,type,target_member}), manage_task({action,title,priority,status,due_date}), manage_chore({action,title,assigned_to,points}), manage_meals({action,date,meal_type,recipe,ingredients[]}), manage_activity({action,title,child_name,day_of_week[],start_time,end_time,location}), save_memory({topic,content,type,importance}), recall_memory({query,type}), manage_skill({action,name,type,trigger_phrases[],url}), get_family({}), get_usage({period})
+Tools: manage_grocery({action,item,quantity,unit,category}), create_event({title,start_time,end_time,description,location,reminder_minutes}), get_calendar({start,end,family_member_id}), update_event({id,title,start_time,end_time,description,location}), delete_event({id,scope}), set_reminder({message,time,type,target_member}), manage_task({action,title,priority,status,due_date}), manage_chore({action,title,assigned_to,points}), manage_meals({action,date,meal_type,recipe,ingredients[]}), manage_activity({action,title,child_name,day_of_week[],start_time,end_time,location}), save_memory({topic,content,type,importance}), recall_memory({query,type}), manage_skill({action,name,type,trigger_phrases[],url}), get_family({}), get_usage({period}), get_weather({location}), get_forecast({location,days}), web_search({query}), get_briefing({})
 `;
 }
 
@@ -257,7 +261,8 @@ function parseToolCall(content: string): { name: string; arguments: Record<strin
     const toolName = pythonMatch[1];
     const knownTools = ['save_memory', 'recall_memory', 'manage_task', 'get_calendar', 'create_event',
       'update_event', 'delete_event', 'set_reminder', 'manage_grocery', 'manage_meals',
-      'manage_activity', 'manage_chore', 'manage_skill', 'get_family'];
+      'manage_activity', 'manage_chore', 'manage_skill', 'get_family', 'get_usage',
+      'get_weather', 'get_forecast', 'web_search', 'get_briefing'];
     if (knownTools.includes(toolName)) {
       const args: Record<string, unknown> = {};
       // Parse Python kwargs: key='value' or key="value" or key=value
@@ -320,8 +325,15 @@ export async function callLLM(
   const memoryContext = buildMemoryContext(lastUserMsg);
   const toolInstructions = enableTools ? getToolInstructions() : '';
 
+  // 2.5 Check if active user is a child (for content filtering)
+  let childSafetyAddendum = '';
+  try {
+    const activeChild = db.prepare("SELECT id FROM family_members WHERE role = 'child' AND is_active = 1 LIMIT 1").get();
+    if (activeChild) childSafetyAddendum = CHILD_SAFE_PROMPT;
+  } catch {}
+
   // 3. Build system prompt with static content FIRST (for prompt caching)
-  const systemPrompt = `${VINEGAR_SYSTEM_PROMPT}${toolInstructions}${memoryContext}`;
+  const systemPrompt = `${VINEGAR_SYSTEM_PROMPT}${childSafetyAddendum}${toolInstructions}${memoryContext}`;
 
   // 3.5 Trim messages to fit token budget
   const { messages: trimmedMsgs } = trimToFit(systemPrompt, messages, memoryContext);

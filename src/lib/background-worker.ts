@@ -10,6 +10,7 @@
 
 import { db, generateId } from './db';
 import { embedAllMemories } from './embeddings';
+import { scanForSuggestions } from './suggestion-engine';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -158,6 +159,34 @@ const jobs: Job[] = [
 
         console.log('[Worker] Cleaned old logs');
       } catch {}
+    },
+  },
+  {
+    name: 'proactive_suggestions',
+    interval: 1800, // Every 30 minutes
+    lastRun: 0,
+    handler: async () => {
+      try {
+        scanForSuggestions();
+      } catch (err) {
+        console.error('[Worker] Suggestion scan failed:', err);
+      }
+    },
+  },
+  {
+    name: 'morning_briefing_cache',
+    interval: 3600, // Every hour
+    lastRun: 0,
+    handler: async () => {
+      // Cache weather data during morning hours (6-10 AM) for fast briefing
+      const hour = new Date().getHours();
+      if (hour >= 6 && hour <= 10) {
+        try {
+          // Trigger weather cache refresh via tool executor
+          const { executeTool } = require('./tool-executor');
+          await executeTool('get_weather', {});
+        } catch {}
+      }
     },
   },
 ];
