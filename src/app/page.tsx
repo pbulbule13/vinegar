@@ -68,7 +68,7 @@ export default function VinegarHome() {
     }).catch(() => {});
   }, []);
 
-  // Wake word detection
+  // Wake word detection with full sleep/wake cycle
   const {
     isAwake,
     isPassiveListening,
@@ -84,7 +84,18 @@ export default function VinegarHome() {
         handleVoiceActivate();
       }
     },
-    sleepAfterMs: 45000,
+    onSleep: () => {
+      // When sleep command detected or auto-sleep timer fires:
+      // Disconnect voice, deactivate, but keep passive listening alive
+      if (isActive) {
+        stopListening();
+        disconnect();
+        setIsActive(false);
+        // Speak goodbye before going to sleep
+        speakText("Going to sleep. Say Vinegar when you need me.");
+      }
+    },
+    sleepAfterMs: 60000, // 60s of silence before auto-sleep
   });
 
   // Voice callbacks - onTranscript gets (text, isFinal)

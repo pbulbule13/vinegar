@@ -2,6 +2,24 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 
+// Phrases that put Vinegar to sleep (user says these while awake)
+const SLEEP_PHRASES = [
+  "you can sleep now",
+  "you can sleep",
+  "go to sleep",
+  "sleep now",
+  "good night vinegar",
+  "goodnight vinegar",
+  "stop listening",
+  "vinegar sleep",
+  "that's all",
+  "that is all",
+  "thanks vinegar",
+  "thank you vinegar",
+  "bye vinegar",
+  "goodbye vinegar",
+];
+
 interface UseWakeWordOptions {
   wakeWord?: string;
   onWake?: () => void;
@@ -85,13 +103,20 @@ export function useWakeWord(options: UseWakeWordOptions = {}): UseWakeWordReturn
         const transcript = results[i][0].transcript.toLowerCase().trim();
         setLastHeard(transcript);
 
-        // Check for wake word
+        // When ASLEEP: listen for wake word to activate
         if (!isAwakeRef.current && transcript.includes(wakeWord.toLowerCase())) {
           wake();
+          continue;
         }
 
-        // If awake, reset the sleep timer on any speech
+        // When AWAKE: listen for sleep phrases to deactivate
         if (isAwakeRef.current) {
+          const isSleepCommand = SLEEP_PHRASES.some(phrase => transcript.includes(phrase));
+          if (isSleepCommand) {
+            sleep();
+            continue;
+          }
+          // Any other speech resets the auto-sleep timer
           resetSleepTimer();
         }
       }

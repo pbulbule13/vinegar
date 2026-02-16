@@ -1,14 +1,42 @@
 node_modules/
 .next/
 out/
-.env.local
-usage-data.json
-memory-data.json
-tasks-data.json
-next-env.d.ts
+
+# Environment files (API keys, secrets)
+.env
+.env.*
+!.env.example
+
+# Database - ALL personal data stays local
 *.db
 *.db-shm
 *.db-wal
-*.apk
+*.db-journal
+
+# Legacy JSON data files
+usage-data.json
+memory-data.json
+tasks-data.json
+
+# Backups contain full DB copies
 backups/
+
+# Logs
+logs/
+*.log
+
+# Build artifacts
+next-env.d.ts
 tsconfig.tsbuildinfo
+
+# APK builds
+*.apk
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
