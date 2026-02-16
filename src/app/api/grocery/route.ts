@@ -47,8 +47,10 @@ export async function POST(request: Request) {
 
     switch (action) {
       case 'add': {
-        if (!item) return NextResponse.json({ error: 'item required' }, { status: 400 });
-        const normalized = normalizeItem(item);
+        if (!item || !item.trim()) return NextResponse.json({ error: 'item required' }, { status: 400 });
+        const trimmedItem = item.trim();
+        if (trimmedItem.length > 200) return NextResponse.json({ error: 'Item name too long (max 200 chars)' }, { status: 400 });
+        const normalized = normalizeItem(trimmedItem);
 
         // Dedup: check for existing item
         const existing = db.prepare('SELECT id, quantity FROM grocery_items WHERE LOWER(item) LIKE ? AND completed = 0').get(`%${normalized}%`) as { id: string; quantity: number } | undefined;

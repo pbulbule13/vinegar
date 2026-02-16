@@ -37,19 +37,25 @@ export async function POST(request: Request) {
       const encoded = encodeURIComponent(chunk);
       const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q=${encoded}&ttsspeed=1`;
 
-      const response = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Referer": "https://translate.google.com/",
-        },
-      });
+      const controller = new AbortController();
+      const chunkTimeout = setTimeout(() => controller.abort(), 5000);
+      try {
+        const response = await fetch(url, {
+          signal: controller.signal,
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://translate.google.com/",
+          },
+        });
+        clearTimeout(chunkTimeout);
 
-      if (!response.ok) {
-        console.error(`[TTS] Chunk failed (${response.status}): "${chunk.substring(0, 50)}..."`);
-        continue;
+        if (!response.ok) continue;
+
+        audioBuffers.push(await response.arrayBuffer());
+      } catch {
+        clearTimeout(chunkTimeout);
+        continue; // Skip timed-out or failed chunks
       }
-
-      audioBuffers.push(await response.arrayBuffer());
     }
 
     if (audioBuffers.length === 0) {
@@ -72,8 +78,7 @@ export async function POST(request: Request) {
         "Cache-Control": "public, max-age=3600",
       },
     });
-  } catch (err) {
-    console.error("[TTS] Error:", err);
+  } catch {
     return NextResponse.json({ error: "TTS failed" }, { status: 500 });
   }
 }

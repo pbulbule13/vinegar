@@ -66,7 +66,7 @@ export function useWakeWord(options: UseWakeWordOptions = {}): UseWakeWordReturn
       || (window as unknown as { webkitSpeechRecognition?: typeof window.SpeechRecognition }).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      console.warn("[WakeWord] Speech recognition not supported");
+      // Speech recognition not supported in this browser
       return;
     }
 
@@ -99,7 +99,7 @@ export function useWakeWord(options: UseWakeWordOptions = {}): UseWakeWordReturn
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       if (event.error === "no-speech" || event.error === "aborted") return;
-      console.warn("[WakeWord] Recognition error:", event.error);
+      // Recognition error (not no-speech/aborted) - non-fatal
     };
 
     recognition.onend = () => {
@@ -134,12 +134,20 @@ export function useWakeWord(options: UseWakeWordOptions = {}): UseWakeWordReturn
     if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
   }, []);
 
-  // Cleanup on unmount
+  // Cleanup on unmount - ensure all timers and recognition are stopped
   useEffect(() => {
     return () => {
-      stopPassiveListening();
+      isPassiveListeningRef.current = false;
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch {}
+        recognitionRef.current = null;
+      }
+      if (sleepTimerRef.current) {
+        clearTimeout(sleepTimerRef.current);
+        sleepTimerRef.current = null;
+      }
     };
-  }, [stopPassiveListening]);
+  }, []);
 
   return {
     isAwake,

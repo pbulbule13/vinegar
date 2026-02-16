@@ -113,7 +113,7 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions = {}): UseReal
         });
       }
     } catch (err) {
-      console.error("[Vinegar] Audio playback error:", err);
+      // Audio playback error - non-fatal, skip silently
     }
 
     isPlayingRef.current = false;

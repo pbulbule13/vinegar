@@ -48,7 +48,7 @@ export async function POST(request: Request) {
       },
     };
 
-    console.log("[Vinegar] Creating session, voice:", voice, "model:", REALTIME_MODEL);
+    // Creating realtime session
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error("[Vinegar] client_secrets FAILED:", response.status, JSON.stringify(errorData));
+      // client_secrets failed - return generic error to client
 
       // SECURITY FIX: Never return raw API key to browser
       return NextResponse.json(
@@ -74,7 +74,7 @@ export async function POST(request: Request) {
     }
 
     const data = await response.json();
-    console.log("[Vinegar] client_secrets SUCCESS — ephemeral token created, voice:", voice);
+    // Ephemeral token created successfully
 
     // SECURITY: Don't return full instructions to client - they contain system prompt details
     return NextResponse.json({
@@ -86,7 +86,7 @@ export async function POST(request: Request) {
       tools: realtimeTools,
     });
   } catch (err) {
-    console.error("[Vinegar] Token route error:", err);
+    // Token route error - return generic message
     // SECURITY FIX: Never expose API key in error fallback
     return NextResponse.json(
       { error: "Failed to initialize voice session" },

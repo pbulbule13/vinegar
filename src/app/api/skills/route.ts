@@ -49,11 +49,15 @@ export async function POST(request: Request) {
 
           const controller = new AbortController();
           const timeout = setTimeout(() => controller.abort(), 10000);
-          const res = await fetch(url, { signal: controller.signal });
-          clearTimeout(timeout);
-
-          const text = await res.text();
-          return NextResponse.json({ success: true, result: text.substring(0, 2000), status: res.status });
+          try {
+            const res = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeout);
+            const text = await res.text();
+            return NextResponse.json({ success: true, result: text.substring(0, 2000), status: res.status });
+          } catch (err) {
+            clearTimeout(timeout);
+            return NextResponse.json({ success: false, error: err instanceof Error ? err.message : 'Test failed' });
+          }
         }
         return NextResponse.json({ success: true, message: 'Skill type does not support direct testing' });
       } catch (err) {

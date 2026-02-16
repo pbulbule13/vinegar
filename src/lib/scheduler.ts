@@ -13,7 +13,7 @@ let intervalId: ReturnType<typeof setInterval> | null = null;
 export function startScheduler(): void {
   if (intervalId) return; // Already running
 
-  console.log('[Scheduler] Starting reminder evaluation loop');
+  // Scheduler started
 
   intervalId = setInterval(() => {
     evaluateReminders();
@@ -27,7 +27,7 @@ export function stopScheduler(): void {
   if (intervalId) {
     clearInterval(intervalId);
     intervalId = null;
-    console.log('[Scheduler] Stopped');
+    // Scheduler stopped
   }
 }
 
@@ -60,7 +60,7 @@ function evaluateReminders(): void {
         sourceId: reminder.source_id,
       });
 
-      console.log(`[Scheduler] Fired reminder: ${reminder.message}`);
+      // Reminder fired: handled by event bus
 
       // Handle recurring reminders
       if (reminder.type === 'daily') {

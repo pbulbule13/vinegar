@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter, Orbitron, JetBrains_Mono } from 'next/font/google';
 import { ClientOnly } from '@/components/client-only';
+import { ErrorBoundary } from '@/components/error-boundary';
 import './globals.css';
 
 // Server-side init: register tools, start scheduler
@@ -35,7 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>
       <body className="bg-deep-space text-text-primary font-inter antialiased">
-        <ClientOnly>{children}</ClientOnly>
+        <ErrorBoundary><ClientOnly>{children}</ClientOnly></ErrorBoundary>
         <script
           dangerouslySetInnerHTML={{
             __html: `

@@ -29,7 +29,8 @@ export async function POST(request: Request) {
 
     // Snooze action
     if (body.action === 'snooze') {
-      const { id, minutes = 5 } = body;
+      const { id } = body;
+      const minutes = typeof body.minutes === 'number' && body.minutes > 0 && body.minutes <= 1440 ? body.minutes : 5;
       if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
 
       const reminder = db.prepare('SELECT * FROM scheduled_reminders WHERE id = ?').get(id) as Record<string, unknown> | undefined;

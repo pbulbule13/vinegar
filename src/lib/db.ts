@@ -9,7 +9,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 
-const DB_PATH = path.join(process.cwd(), 'vinegar.db');
+const DB_PATH = process.env.DATABASE_PATH || path.join(process.cwd(), 'vinegar.db');
 
 function createDatabase(): Database.Database {
   const db = new Database(DB_PATH);

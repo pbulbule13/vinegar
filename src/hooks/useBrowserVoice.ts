@@ -118,7 +118,7 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
 
       await audio.play();
     } catch (err) {
-      console.error("[Voice] TTS error:", err);
+      // TTS error - non-fatal, continue to restart listening
       isSpeakingRef.current = false;
       setIsSpeaking(false);
       // Still restart listening even if TTS fails
@@ -324,8 +324,17 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
   useEffect(() => {
     return () => {
       isConnectedRef.current = false;
-      if (audioRef.current) { audioRef.current.pause(); }
-      if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch {} }
+      isProcessingRef.current = false;
+      isSpeakingRef.current = false;
+      chatHistoryRef.current = [];
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch {}
+        recognitionRef.current = null;
+      }
     };
   }, []);
 

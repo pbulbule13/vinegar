@@ -64,7 +64,6 @@ export async function POST(request: Request) {
       toolsUsed: result.toolsUsed,
     });
   } catch (err) {
-    console.error("[Vinegar Text] Error:", err);
     const message = err instanceof Error ? err.message : "Failed to get response";
     return NextResponse.json({ error: message }, { status: 500 });
   }

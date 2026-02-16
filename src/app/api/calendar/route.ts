@@ -12,8 +12,16 @@ export async function GET(request: Request) {
     let query = 'SELECT * FROM calendar_events WHERE 1=1';
     const params: unknown[] = [];
 
-    if (start) { query += ' AND end_time >= ?'; params.push(Number(start)); }
-    if (end) { query += ' AND start_time <= ?'; params.push(Number(end)); }
+    if (start) {
+      const startNum = Number(start);
+      if (isNaN(startNum)) return NextResponse.json({ error: 'Invalid start timestamp' }, { status: 400 });
+      query += ' AND end_time >= ?'; params.push(startNum);
+    }
+    if (end) {
+      const endNum = Number(end);
+      if (isNaN(endNum)) return NextResponse.json({ error: 'Invalid end timestamp' }, { status: 400 });
+      query += ' AND start_time <= ?'; params.push(endNum);
+    }
     if (memberId) { query += ' AND (family_member_id = ? OR family_member_id IS NULL)'; params.push(memberId); }
 
     query += ' ORDER BY start_time ASC LIMIT 100';

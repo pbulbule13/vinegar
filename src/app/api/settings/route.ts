@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     if (euri_api_key !== undefined) {
       if (euri_api_key === null || euri_api_key === "") {
         cookieStore.delete("euri_api_key");
-      } else if (typeof euri_api_key === "string" && euri_api_key.trim().length > 10) {
+      } else if (typeof euri_api_key === "string" && euri_api_key.trim().length >= 10 && euri_api_key.trim().length <= 256) {
         cookieStore.set("euri_api_key", euri_api_key.trim(), {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",

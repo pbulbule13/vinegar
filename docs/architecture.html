@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vinegar Home Assistant - Architecture Documentation</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --surface2: #1a1a2e;
+    --border: #2a2a3e;
+    --accent: #6366f1;
+    --accent2: #8b5cf6;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --red: #ef4444;
+    --blue: #3b82f6;
+    --cyan: #06b6d4;
+    --orange: #f97316;
+    --pink: #ec4899;
+    --text: #e2e8f0;
+    --text2: #94a3b8;
+    --text3: #64748b;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  .container { max-width: 1400px; margin: 0 auto; padding: 0 2rem; }
+
+  /* Hero */
+  .hero {
+    background: linear-gradient(135deg, #1a1a2e 0%, #0a0a1a 50%, #1a0a2e 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 4rem 0 3rem;
+    text-align: center;
+  }
+  .hero h1 {
+    font-size: 3.5rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--accent), var(--accent2), var(--cyan));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 0.5rem;
+  }
+  .hero .subtitle { color: var(--text2); font-size: 1.25rem; margin-bottom: 2rem; }
+  .hero-stats {
+    display: flex; gap: 2rem; justify-content: center; flex-wrap: wrap;
+  }
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem 1.5rem;
+    min-width: 140px;
+  }
+  .stat-value { font-size: 1.8rem; font-weight: 700; color: var(--accent); }
+  .stat-label { font-size: 0.8rem; color: var(--text3); text-transform: uppercase; letter-spacing: 0.05em; }
+
+  /* Navigation */
+  .nav {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(10,10,15,0.95); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 0.75rem 0;
+  }
+  .nav-inner {
+    display: flex; gap: 0.5rem; overflow-x: auto; padding: 0 2rem;
+    scrollbar-width: none;
+  }
+  .nav-inner::-webkit-scrollbar { display: none; }
+  .nav a {
+    color: var(--text2); text-decoration: none; font-size: 0.85rem;
+    padding: 0.4rem 0.8rem; border-radius: 6px; white-space: nowrap;
+    transition: all 0.2s;
+  }
+  .nav a:hover { color: var(--text); background: var(--surface2); }
+
+  /* Sections */
+  section { padding: 3rem 0; border-bottom: 1px solid var(--border); }
+  section:last-child { border-bottom: none; }
+  h2 {
+    font-size: 2rem; font-weight: 700; margin-bottom: 1.5rem;
+    display: flex; align-items: center; gap: 0.75rem;
+  }
+  h2 .icon { font-size: 1.5rem; }
+  h3 { font-size: 1.3rem; font-weight: 600; margin: 1.5rem 0 0.75rem; color: var(--accent); }
+  p { color: var(--text2); margin-bottom: 1rem; }
+
+  /* Cards */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1rem;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card-title {
+    font-weight: 600; font-size: 1rem; margin-bottom: 0.5rem;
+    display: flex; align-items: center; gap: 0.5rem;
+  }
+  .card-desc { color: var(--text2); font-size: 0.875rem; }
+  .badge {
+    font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 4px;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  .badge-green { background: rgba(34,197,94,0.15); color: var(--green); }
+  .badge-blue { background: rgba(59,130,246,0.15); color: var(--blue); }
+  .badge-yellow { background: rgba(234,179,8,0.15); color: var(--yellow); }
+  .badge-red { background: rgba(239,68,68,0.15); color: var(--red); }
+  .badge-purple { background: rgba(139,92,246,0.15); color: var(--accent2); }
+  .badge-cyan { background: rgba(6,182,212,0.15); color: var(--cyan); }
+  .badge-orange { background: rgba(249,115,22,0.15); color: var(--orange); }
+  .badge-pink { background: rgba(236,72,153,0.15); color: var(--pink); }
+
+  /* Architecture Diagrams */
+  .diagram-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2rem;
+    margin: 1.5rem 0;
+    overflow-x: auto;
+  }
+  .diagram-title {
+    font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem; text-align: center;
+    color: var(--accent);
+  }
+  svg text { font-family: 'Segoe UI', system-ui, sans-serif; }
+
+  /* Tables */
+  .table-wrap { overflow-x: auto; margin: 1rem 0; }
+  table {
+    width: 100%; border-collapse: collapse;
+    background: var(--surface); border-radius: 12px; overflow: hidden;
+  }
+  th {
+    background: var(--surface2); color: var(--text);
+    font-weight: 600; font-size: 0.85rem; text-transform: uppercase;
+    letter-spacing: 0.03em; padding: 0.75rem 1rem; text-align: left;
+  }
+  td {
+    padding: 0.65rem 1rem; border-top: 1px solid var(--border);
+    font-size: 0.9rem; color: var(--text2);
+  }
+  tr:hover td { background: rgba(99,102,241,0.05); }
+
+  /* Flow diagrams */
+  .flow {
+    display: flex; flex-direction: column; gap: 0; align-items: center;
+    margin: 1.5rem 0;
+  }
+  .flow-step {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 0.75rem 1.5rem;
+    font-size: 0.9rem; text-align: center; min-width: 280px;
+    position: relative;
+  }
+  .flow-step.highlight { border-color: var(--accent); background: rgba(99,102,241,0.1); }
+  .flow-step.green { border-color: var(--green); background: rgba(34,197,94,0.08); }
+  .flow-step.orange { border-color: var(--orange); background: rgba(249,115,22,0.08); }
+  .flow-step.red { border-color: var(--red); background: rgba(239,68,68,0.08); }
+  .flow-arrow {
+    color: var(--text3); font-size: 1.2rem; line-height: 1;
+    padding: 0.15rem 0;
+  }
+
+  /* Code blocks */
+  .code-block {
+    background: #0d1117; border: 1px solid var(--border); border-radius: 8px;
+    padding: 1rem; font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.85rem; overflow-x: auto; color: #c9d1d9; margin: 1rem 0;
+    line-height: 1.5;
+  }
+  .code-block .kw { color: #ff7b72; }
+  .code-block .str { color: #a5d6ff; }
+  .code-block .fn { color: #d2a8ff; }
+  .code-block .cm { color: #8b949e; }
+  .code-block .num { color: #79c0ff; }
+
+  /* File tree */
+  .file-tree {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.5rem; font-family: monospace;
+    font-size: 0.85rem; line-height: 1.8; color: var(--text2);
+  }
+  .file-tree .dir { color: var(--blue); font-weight: 600; }
+  .file-tree .file { color: var(--text2); }
+  .file-tree .desc { color: var(--text3); font-style: italic; }
+
+  /* Two column */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+  @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* Security section */
+  .security-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem;
+  }
+  .security-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1rem; border-left: 3px solid var(--green);
+  }
+  .security-card.fixed { border-left-color: var(--green); }
+  .security-card.pending { border-left-color: var(--yellow); }
+  .security-card h4 { font-size: 0.95rem; margin-bottom: 0.3rem; }
+  .security-card p { font-size: 0.8rem; color: var(--text3); margin: 0; }
+
+  /* Timeline */
+  .timeline { position: relative; padding-left: 2rem; }
+  .timeline::before {
+    content: ''; position: absolute; left: 0.5rem; top: 0; bottom: 0;
+    width: 2px; background: var(--border);
+  }
+  .timeline-item { position: relative; margin-bottom: 1.5rem; }
+  .timeline-item::before {
+    content: ''; position: absolute; left: -1.65rem; top: 0.5rem;
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent); border: 2px solid var(--bg);
+  }
+  .timeline-item h4 { font-size: 0.95rem; margin-bottom: 0.25rem; }
+  .timeline-item p { font-size: 0.85rem; color: var(--text3); }
+
+  /* Footer */
+  footer {
+    text-align: center; padding: 2rem; color: var(--text3);
+    font-size: 0.85rem; border-top: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="container">
+    <h1>Vinegar</h1>
+    <p class="subtitle">Family Home AI Assistant &mdash; Architecture & Documentation</p>
+    <div class="hero-stats">
+      <div class="stat"><div class="stat-value">9,047</div><div class="stat-label">Lines of Code</div></div>
+      <div class="stat"><div class="stat-value">60</div><div class="stat-label">Source Files</div></div>
+      <div class="stat"><div class="stat-value">16</div><div class="stat-label">DB Tables</div></div>
+      <div class="stat"><div class="stat-value">15+</div><div class="stat-label">Built-in Tools</div></div>
+      <div class="stat"><div class="stat-value">19</div><div class="stat-label">API Endpoints</div></div>
+      <div class="stat"><div class="stat-value">30+</div><div class="stat-label">AI Models</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Nav -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="#overview">Overview</a>
+    <a href="#high-level">High-Level Architecture</a>
+    <a href="#request-flow">Request Flow</a>
+    <a href="#voice-arch">Voice Architecture</a>
+    <a href="#llm-pipeline">LLM Pipeline</a>
+    <a href="#tool-system">Tool System</a>
+    <a href="#database">Database</a>
+    <a href="#api-routes">API Routes</a>
+    <a href="#components">UI Components</a>
+    <a href="#security">Security</a>
+    <a href="#background">Background Jobs</a>
+    <a href="#file-structure">File Structure</a>
+    <a href="#tech-stack">Tech Stack</a>
+  </div>
+</nav>
+
+<div class="container">
+
+<!-- Overview -->
+<section id="overview">
+  <h2><span class="icon">&#127968;</span> Overview</h2>
+  <p>Vinegar is a family home AI assistant that runs on your local network. It provides voice and text chat interfaces powered by 30+ AI models, with tools for managing calendars, tasks, groceries, meals, chores, reminders, and more. All data stays local in SQLite.</p>
+
+  <div class="card-grid" style="margin-top:1.5rem">
+    <div class="card">
+      <div class="card-title">&#128483; Dual Voice Modes</div>
+      <div class="card-desc">Free mode (Web Speech API + Google TTS) and premium mode (OpenAI Realtime full-duplex). Wake word detection with passive listening.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">&#129302; 30+ AI Models</div>
+      <div class="card-desc">Access Gemini 2.5, GPT-5, Llama, Qwen, and more through Euri API. Smart model selection based on query complexity.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">&#128736; 15+ Built-in Tools</div>
+      <div class="card-desc">Calendar, tasks, groceries, meals, chores, reminders, activities, memories, skills. Plus custom skill creation.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">&#128274; Privacy First</div>
+      <div class="card-desc">PII redaction before LLM calls. Local SQLite database. LAN-only operation. Auth middleware with shared secret.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">&#9889; Token Optimized</div>
+      <div class="card-desc">200K daily token budget. Offline commands (0 tokens). Response caching. System prompt compressed to ~393 tokens.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">&#128241; Cross-Platform</div>
+      <div class="card-desc">Desktop web app + Android APK via Capacitor 5. Server at 192.168.1.15:3000, APK builder at :8080.</div>
+    </div>
+  </div>
+</section>
+
+<!-- High-Level Architecture -->
+<section id="high-level">
+  <h2><span class="icon">&#127959;</span> High-Level Architecture</h2>
+  <div class="diagram-container">
+    <div class="diagram-title">System Architecture Overview</div>
+    <svg viewBox="0 0 1100 720" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <!-- Background layers -->
+      <rect x="20" y="10" width="1060" height="140" rx="16" fill="#1a1a2e" stroke="#2a2a3e" stroke-width="1.5"/>
+      <rect x="20" y="170" width="1060" height="120" rx="16" fill="#12121a" stroke="#2a2a3e" stroke-width="1.5"/>
+      <rect x="20" y="310" width="1060" height="120" rx="16" fill="#1a1a2e" stroke="#2a2a3e" stroke-width="1.5"/>
+      <rect x="20" y="450" width="520" height="120" rx="16" fill="#12121a" stroke="#2a2a3e" stroke-width="1.5"/>
+      <rect x="560" y="450" width="520" height="120" rx="16" fill="#12121a" stroke="#2a2a3e" stroke-width="1.5"/>
+      <rect x="20" y="590" width="1060" height="120" rx="16" fill="#1a1a2e" stroke="#2a2a3e" stroke-width="1.5"/>
+
+      <!-- Layer labels -->
+      <text x="40" y="35" fill="#64748b" font-size="11" font-weight="600" text-transform="uppercase">CLIENT LAYER (React 18)</text>
+      <text x="40" y="195" fill="#64748b" font-size="11" font-weight="600">API GATEWAY (Next.js 14 Route Handlers)</text>
+      <text x="40" y="335" fill="#64748b" font-size="11" font-weight="600">MIDDLEWARE LAYER</text>
+      <text x="40" y="475" fill="#64748b" font-size="11" font-weight="600">EXTERNAL APIs</text>
+      <text x="580" y="475" fill="#64748b" font-size="11" font-weight="600">BACKGROUND SERVICES</text>
+      <text x="40" y="615" fill="#64748b" font-size="11" font-weight="600">PERSISTENCE LAYER</text>
+
+      <!-- Client boxes -->
+      <rect x="50" y="50" width="160" height="80" rx="10" fill="rgba(99,102,241,0.15)" stroke="#6366f1" stroke-width="1.5"/>
+      <text x="130" y="80" fill="#a5b4fc" font-size="13" font-weight="600" text-anchor="middle">Chat Page</text>
+      <text x="130" y="98" fill="#64748b" font-size="10" text-anchor="middle">Voice + Text UI</text>
+      <text x="130" y="115" fill="#64748b" font-size="10" text-anchor="middle">page.tsx</text>
+
+      <rect x="230" y="50" width="160" height="80" rx="10" fill="rgba(99,102,241,0.15)" stroke="#6366f1" stroke-width="1.5"/>
+      <text x="310" y="80" fill="#a5b4fc" font-size="13" font-weight="600" text-anchor="middle">Dashboard</text>
+      <text x="310" y="98" fill="#64748b" font-size="10" text-anchor="middle">5 Widgets + Chat</text>
+      <text x="310" y="115" fill="#64748b" font-size="10" text-anchor="middle">dashboard/page.tsx</text>
+
+      <rect x="410" y="50" width="200" height="80" rx="10" fill="rgba(139,92,246,0.15)" stroke="#8b5cf6" stroke-width="1.5"/>
+      <text x="510" y="75" fill="#c4b5fd" font-size="13" font-weight="600" text-anchor="middle">Voice Hooks</text>
+      <text x="510" y="93" fill="#64748b" font-size="10" text-anchor="middle">useBrowserVoice (Free)</text>
+      <text x="510" y="108" fill="#64748b" font-size="10" text-anchor="middle">useRealtimeVoice (Premium)</text>
+      <text x="510" y="123" fill="#64748b" font-size="10" text-anchor="middle">useWakeWord (Passive)</text>
+
+      <rect x="630" y="50" width="200" height="80" rx="10" fill="rgba(6,182,212,0.15)" stroke="#06b6d4" stroke-width="1.5"/>
+      <text x="730" y="75" fill="#67e8f9" font-size="13" font-weight="600" text-anchor="middle">Components</text>
+      <text x="730" y="93" fill="#64748b" font-size="10" text-anchor="middle">FamilySwitcher, GroceryList</text>
+      <text x="730" y="108" fill="#64748b" font-size="10" text-anchor="middle">ChoreBoard, ActivitySchedule</text>
+      <text x="730" y="123" fill="#64748b" font-size="10" text-anchor="middle">SettingsModal, FamilySetup</text>
+
+      <rect x="850" y="50" width="210" height="80" rx="10" fill="rgba(249,115,22,0.15)" stroke="#f97316" stroke-width="1.5"/>
+      <text x="955" y="75" fill="#fdba74" font-size="13" font-weight="600" text-anchor="middle">Android APK</text>
+      <text x="955" y="93" fill="#64748b" font-size="10" text-anchor="middle">Capacitor 5 WebView</text>
+      <text x="955" y="108" fill="#64748b" font-size="10" text-anchor="middle">RECORD_AUDIO Permission</text>
+      <text x="955" y="123" fill="#64748b" font-size="10" text-anchor="middle">Points to 192.168.1.15</text>
+
+      <!-- API boxes -->
+      <rect x="50" y="210" width="110" height="55" rx="8" fill="rgba(34,197,94,0.12)" stroke="#22c55e" stroke-width="1.2"/>
+      <text x="105" y="233" fill="#86efac" font-size="11" font-weight="600" text-anchor="middle">/api/chat</text>
+      <text x="105" y="250" fill="#64748b" font-size="9" text-anchor="middle">Text LLM</text>
+
+      <rect x="170" y="210" width="110" height="55" rx="8" fill="rgba(34,197,94,0.12)" stroke="#22c55e" stroke-width="1.2"/>
+      <text x="225" y="233" fill="#86efac" font-size="11" font-weight="600" text-anchor="middle">/api/chat/stream</text>
+      <text x="225" y="250" fill="#64748b" font-size="9" text-anchor="middle">SSE Streaming</text>
+
+      <rect x="290" y="210" width="95" height="55" rx="8" fill="rgba(34,197,94,0.12)" stroke="#22c55e" stroke-width="1.2"/>
+      <text x="337" y="233" fill="#86efac" font-size="11" font-weight="600" text-anchor="middle">/api/tts</text>
+      <text x="337" y="250" fill="#64748b" font-size="9" text-anchor="middle">Google TTS</text>
+
+      <rect x="395" y="210" width="95" height="55" rx="8" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="442" y="233" fill="#93c5fd" font-size="11" font-weight="600" text-anchor="middle">/api/family</text>
+      <text x="442" y="250" fill="#64748b" font-size="9" text-anchor="middle">CRUD + PIN</text>
+
+      <rect x="500" y="210" width="105" height="55" rx="8" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="552" y="233" fill="#93c5fd" font-size="11" font-weight="600" text-anchor="middle">/api/calendar</text>
+      <text x="552" y="250" fill="#64748b" font-size="9" text-anchor="middle">Events</text>
+
+      <rect x="615" y="210" width="105" height="55" rx="8" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="667" y="233" fill="#93c5fd" font-size="11" font-weight="600" text-anchor="middle">/api/grocery</text>
+      <text x="667" y="250" fill="#64748b" font-size="9" text-anchor="middle">Shopping List</text>
+
+      <rect x="730" y="210" width="105" height="55" rx="8" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="782" y="233" fill="#93c5fd" font-size="11" font-weight="600" text-anchor="middle">/api/tools/*</text>
+      <text x="782" y="250" fill="#64748b" font-size="9" text-anchor="middle">Tool Executor</text>
+
+      <rect x="845" y="210" width="120" height="55" rx="8" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="905" y="233" fill="#93c5fd" font-size="11" font-weight="600" text-anchor="middle">+11 more routes</text>
+      <text x="905" y="250" fill="#64748b" font-size="9" text-anchor="middle">skills, chores, meals...</text>
+
+      <!-- Middleware boxes -->
+      <rect x="50" y="350" width="180" height="60" rx="10" fill="rgba(236,72,153,0.12)" stroke="#ec4899" stroke-width="1.5"/>
+      <text x="140" y="375" fill="#f9a8d4" font-size="12" font-weight="600" text-anchor="middle">LLM Middleware</text>
+      <text x="140" y="393" fill="#64748b" font-size="10" text-anchor="middle">Context + PII + Budget + Tools</text>
+
+      <rect x="250" y="350" width="160" height="60" rx="10" fill="rgba(236,72,153,0.12)" stroke="#ec4899" stroke-width="1.5"/>
+      <text x="330" y="375" fill="#f9a8d4" font-size="12" font-weight="600" text-anchor="middle">Tool Executor</text>
+      <text x="330" y="393" fill="#64748b" font-size="10" text-anchor="middle">Registry + Skills + SSRF</text>
+
+      <rect x="430" y="350" width="160" height="60" rx="10" fill="rgba(236,72,153,0.12)" stroke="#ec4899" stroke-width="1.5"/>
+      <text x="510" y="375" fill="#f9a8d4" font-size="12" font-weight="600" text-anchor="middle">PII Redactor</text>
+      <text x="510" y="393" fill="#64748b" font-size="10" text-anchor="middle">Redact / Rehydrate</text>
+
+      <rect x="610" y="350" width="160" height="60" rx="10" fill="rgba(236,72,153,0.12)" stroke="#ec4899" stroke-width="1.5"/>
+      <text x="690" y="375" fill="#f9a8d4" font-size="12" font-weight="600" text-anchor="middle">Offline Commands</text>
+      <text x="690" y="393" fill="#64748b" font-size="10" text-anchor="middle">0-Token Responses</text>
+
+      <rect x="790" y="350" width="170" height="60" rx="10" fill="rgba(236,72,153,0.12)" stroke="#ec4899" stroke-width="1.5"/>
+      <text x="875" y="375" fill="#f9a8d4" font-size="12" font-weight="600" text-anchor="middle">Auth Middleware</text>
+      <text x="875" y="393" fill="#64748b" font-size="10" text-anchor="middle">Bearer Token / Cookie</text>
+
+      <!-- External API boxes -->
+      <rect x="50" y="495" width="230" height="55" rx="10" fill="rgba(234,179,8,0.1)" stroke="#eab308" stroke-width="1.2"/>
+      <text x="165" y="520" fill="#fde047" font-size="12" font-weight="600" text-anchor="middle">Euri API (30+ models)</text>
+      <text x="165" y="537" fill="#64748b" font-size="10" text-anchor="middle">api.euron.one - 200K tokens/day free</text>
+
+      <rect x="300" y="495" width="210" height="55" rx="10" fill="rgba(234,179,8,0.1)" stroke="#eab308" stroke-width="1.2"/>
+      <text x="405" y="520" fill="#fde047" font-size="12" font-weight="600" text-anchor="middle">OpenAI Realtime</text>
+      <text x="405" y="537" fill="#64748b" font-size="10" text-anchor="middle">WebSocket full-duplex voice</text>
+
+      <!-- Background boxes -->
+      <rect x="580" y="495" width="230" height="55" rx="10" fill="rgba(6,182,212,0.1)" stroke="#06b6d4" stroke-width="1.2"/>
+      <text x="695" y="520" fill="#67e8f9" font-size="12" font-weight="600" text-anchor="middle">Scheduler (30s loop)</text>
+      <text x="695" y="537" fill="#64748b" font-size="10" text-anchor="middle">Reminder evaluation + fire</text>
+
+      <rect x="830" y="495" width="230" height="55" rx="10" fill="rgba(6,182,212,0.1)" stroke="#06b6d4" stroke-width="1.2"/>
+      <text x="945" y="520" fill="#67e8f9" font-size="12" font-weight="600" text-anchor="middle">Background Worker (60s)</text>
+      <text x="945" y="537" fill="#64748b" font-size="10" text-anchor="middle">Embeddings, Backup, Cleanup</text>
+
+      <!-- Persistence -->
+      <rect x="50" y="630" width="300" height="60" rx="10" fill="rgba(99,102,241,0.12)" stroke="#6366f1" stroke-width="1.5"/>
+      <text x="200" y="655" fill="#a5b4fc" font-size="13" font-weight="600" text-anchor="middle">SQLite (vinegar.db)</text>
+      <text x="200" y="673" fill="#64748b" font-size="10" text-anchor="middle">16 tables, WAL mode, 5 migration phases</text>
+
+      <rect x="380" y="630" width="200" height="60" rx="10" fill="rgba(139,92,246,0.1)" stroke="#8b5cf6" stroke-width="1.2"/>
+      <text x="480" y="655" fill="#c4b5fd" font-size="12" font-weight="600" text-anchor="middle">Response Cache</text>
+      <text x="480" y="673" fill="#64748b" font-size="10" text-anchor="middle">5-min TTL, 50 entries LRU</text>
+
+      <rect x="610" y="630" width="200" height="60" rx="10" fill="rgba(139,92,246,0.1)" stroke="#8b5cf6" stroke-width="1.2"/>
+      <text x="710" y="655" fill="#c4b5fd" font-size="12" font-weight="600" text-anchor="middle">Tool Registry</text>
+      <text x="710" y="673" fill="#64748b" font-size="10" text-anchor="middle">Map&lt;string, RegisteredTool&gt;</text>
+
+      <rect x="840" y="630" width="200" height="60" rx="10" fill="rgba(139,92,246,0.1)" stroke="#8b5cf6" stroke-width="1.2"/>
+      <text x="940" y="655" fill="#c4b5fd" font-size="12" font-weight="600" text-anchor="middle">Event Bus</text>
+      <text x="940" y="673" fill="#64748b" font-size="10" text-anchor="middle">vinegarEvents pub/sub</text>
+
+      <!-- Arrows (simplified) -->
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#4a4a6a"/>
+        </marker>
+      </defs>
+      <!-- Client to API -->
+      <line x1="130" y1="130" x2="130" y2="210" stroke="#4a4a6a" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <line x1="310" y1="130" x2="310" y2="210" stroke="#4a4a6a" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <line x1="510" y1="130" x2="442" y2="210" stroke="#4a4a6a" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <!-- API to Middleware -->
+      <line x1="130" y1="265" x2="140" y2="350" stroke="#4a4a6a" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <line x1="330" y1="265" x2="330" y2="350" stroke="#4a4a6a" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <!-- Middleware to External -->
+      <line x1="140" y1="410" x2="165" y2="495" stroke="#4a4a6a" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <!-- Middleware to Persistence -->
+      <line x1="330" y1="410" x2="250" y2="630" stroke="#4a4a6a" stroke-width="1" stroke-dasharray="4,3"/>
+      <line x1="510" y1="410" x2="480" y2="630" stroke="#4a4a6a" stroke-width="1" stroke-dasharray="4,3"/>
+    </svg>
+  </div>
+</section>
+
+<!-- Request Flow -->
+<section id="request-flow">
+  <h2><span class="icon">&#128260;</span> Text Chat Request Flow</h2>
+  <p>Every text message flows through this pipeline, from user input to response display.</p>
+
+  <div class="diagram-container">
+    <div class="diagram-title">End-to-End Request Pipeline</div>
+    <svg viewBox="0 0 1000 580" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <!-- Steps -->
+      <rect x="20" y="20" width="200" height="50" rx="10" fill="rgba(99,102,241,0.15)" stroke="#6366f1" stroke-width="1.5"/>
+      <text x="120" y="50" fill="#a5b4fc" font-size="12" font-weight="600" text-anchor="middle">User Types Message</text>
+
+      <rect x="20" y="100" width="200" height="50" rx="10" fill="rgba(6,182,212,0.15)" stroke="#06b6d4" stroke-width="1.5"/>
+      <text x="120" y="130" fill="#67e8f9" font-size="12" font-weight="600" text-anchor="middle">Try Offline Response</text>
+
+      <!-- Branch: offline hit -->
+      <rect x="280" y="100" width="180" height="50" rx="10" fill="rgba(34,197,94,0.15)" stroke="#22c55e" stroke-width="1.5"/>
+      <text x="370" y="122" fill="#86efac" font-size="11" font-weight="600" text-anchor="middle">Match! Return offline</text>
+      <text x="370" y="138" fill="#64748b" font-size="10" text-anchor="middle">0 tokens used</text>
+
+      <rect x="20" y="180" width="200" height="50" rx="10" fill="rgba(6,182,212,0.15)" stroke="#06b6d4" stroke-width="1.5"/>
+      <text x="120" y="210" fill="#67e8f9" font-size="12" font-weight="600" text-anchor="middle">Check Response Cache</text>
+
+      <rect x="280" y="180" width="180" height="50" rx="10" fill="rgba(34,197,94,0.15)" stroke="#22c55e" stroke-width="1.5"/>
+      <text x="370" y="202" fill="#86efac" font-size="11" font-weight="600" text-anchor="middle">Cache Hit! Return</text>
+      <text x="370" y="218" fill="#64748b" font-size="10" text-anchor="middle">5-min TTL</text>
+
+      <rect x="20" y="260" width="200" height="50" rx="10" fill="rgba(236,72,153,0.15)" stroke="#ec4899" stroke-width="1.5"/>
+      <text x="120" y="290" fill="#f9a8d4" font-size="12" font-weight="600" text-anchor="middle">Inject Context</text>
+
+      <!-- Context details -->
+      <rect x="280" y="245" width="420" height="80" rx="10" fill="rgba(30,30,50,0.8)" stroke="#2a2a3e" stroke-width="1"/>
+      <text x="300" y="268" fill="#94a3b8" font-size="10">Layer 0: Family names (always)</text>
+      <text x="300" y="284" fill="#94a3b8" font-size="10">Layer 1: Relevant memories (keyword match)</text>
+      <text x="300" y="300" fill="#94a3b8" font-size="10">Layer 2: Calendar events (if keyword detected)</text>
+      <text x="300" y="316" fill="#94a3b8" font-size="10">Layer 3: Pending tasks, grocery list, meals (keyword gated)</text>
+
+      <rect x="20" y="340" width="200" height="50" rx="10" fill="rgba(239,68,68,0.12)" stroke="#ef4444" stroke-width="1.2"/>
+      <text x="120" y="370" fill="#fca5a5" font-size="12" font-weight="600" text-anchor="middle">Redact PII</text>
+
+      <rect x="280" y="340" width="300" height="50" rx="10" fill="rgba(30,30,50,0.8)" stroke="#2a2a3e" stroke-width="1"/>
+      <text x="430" y="362" fill="#94a3b8" font-size="10" text-anchor="middle">SSN, Credit Card, Email, Phone, Address</text>
+      <text x="430" y="378" fill="#64748b" font-size="9" text-anchor="middle">Family names NOT redacted (needed for tools)</text>
+
+      <rect x="20" y="420" width="200" height="50" rx="10" fill="rgba(234,179,8,0.12)" stroke="#eab308" stroke-width="1.2"/>
+      <text x="120" y="450" fill="#fde047" font-size="12" font-weight="600" text-anchor="middle">Call Euri API</text>
+
+      <rect x="280" y="420" width="300" height="50" rx="10" fill="rgba(249,115,22,0.12)" stroke="#f97316" stroke-width="1.2"/>
+      <text x="430" y="442" fill="#fdba74" font-size="11" font-weight="600" text-anchor="middle">Tool Call Detected?</text>
+      <text x="430" y="458" fill="#64748b" font-size="10" text-anchor="middle">executeTool() - up to 3 iterations</text>
+
+      <rect x="640" y="420" width="160" height="50" rx="10" fill="rgba(249,115,22,0.12)" stroke="#f97316" stroke-width="1"/>
+      <text x="720" y="442" fill="#fdba74" font-size="10" font-weight="600" text-anchor="middle">Loop back to Euri</text>
+      <text x="720" y="458" fill="#64748b" font-size="9" text-anchor="middle">with tool result</text>
+
+      <rect x="20" y="500" width="200" height="50" rx="10" fill="rgba(34,197,94,0.15)" stroke="#22c55e" stroke-width="1.5"/>
+      <text x="120" y="522" fill="#86efac" font-size="12" font-weight="600" text-anchor="middle">Rehydrate PII</text>
+      <text x="120" y="538" fill="#64748b" font-size="10" text-anchor="middle">Restore original values</text>
+
+      <rect x="280" y="500" width="200" height="50" rx="10" fill="rgba(99,102,241,0.15)" stroke="#6366f1" stroke-width="1.5"/>
+      <text x="380" y="522" fill="#a5b4fc" font-size="12" font-weight="600" text-anchor="middle">Log + Cache + Return</text>
+      <text x="380" y="538" fill="#64748b" font-size="10" text-anchor="middle">usage_logs + conversation_logs</text>
+
+      <!-- Arrows -->
+      <line x1="120" y1="70" x2="120" y2="100" stroke="#4a4a6a" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <line x1="220" y1="125" x2="280" y2="125" stroke="#22c55e" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <text x="245" y="118" fill="#22c55e" font-size="9">hit</text>
+      <line x1="120" y1="150" x2="120" y2="180" stroke="#4a4a6a" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <text x="90" y="168" fill="#64748b" font-size="9">miss</text>
+      <line x1="220" y1="205" x2="280" y2="205" stroke="#22c55e" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <text x="245" y="198" fill="#22c55e" font-size="9">hit</text>
+      <line x1="120" y1="230" x2="120" y2="260" stroke="#4a4a6a" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <line x1="120" y1="310" x2="120" y2="340" stroke="#4a4a6a" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <line x1="120" y1="390" x2="120" y2="420" stroke="#4a4a6a" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <line x1="220" y1="445" x2="280" y2="445" stroke="#f97316" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="580" y1="445" x2="640" y2="445" stroke="#f97316" stroke-width="1" marker-end="url(#arrow)"/>
+      <!-- Loop arrow -->
+      <path d="M 720 420 L 720 405 Q 720 395 710 395 L 145 395 Q 135 395 135 405 L 135 420" stroke="#f97316" stroke-width="1" fill="none" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <line x1="120" y1="470" x2="120" y2="500" stroke="#4a4a6a" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <line x1="220" y1="525" x2="280" y2="525" stroke="#4a4a6a" stroke-width="1.5" marker-end="url(#arrow)"/>
+    </svg>
+  </div>
+</section>
+
+<!-- Voice Architecture -->
+<section id="voice-arch">
+  <h2><span class="icon">&#127908;</span> Voice Architecture</h2>
+  <div class="two-col">
+    <div>
+      <h3>Free Mode (Browser Voice)</h3>
+      <div class="flow">
+        <div class="flow-step">User speaks</div>
+        <div class="flow-arrow">&#8595;</div>
+        <div class="flow-step">Web Speech API (STT) - Browser native, free</div>
+        <div class="flow-arrow">&#8595;</div>
+        <div class="flow-step green">tryOfflineResponse() - 0 tokens if matched</div>
+        <div class="flow-arrow">&#8595;</div>
+        <div class="flow-step highlight">POST /api/chat - Euri LLM (text pipeline)</div>
+        <div class="flow-arrow">&#8595;</div>
+        <div class="flow-step">POST /api/tts - Google Translate TTS</div>
+        <div class="flow-arrow">&#8595;</div>
+        <div class="flow-step">Audio playback (190-char chunks)</div>
+        <div class="flow-arrow">&#8595;</div>
+        <div class="flow-step">Auto-restart listening</div>
+      </div>
+    </div>
+    <div>
+      <h3>Premium Mode (OpenAI Realtime)</h3>
+      <div class="flow">
+        <div class="flow-step">User speaks</div>
+        <div class="flow-arrow">&#8595;</div>
+        <div class="flow-step">getUserMedia() + PCM16 conversion</div>
+        <div class="flow-arrow">&#8595;</div>
+        <div class="flow-step orange">WebSocket to OpenAI Realtime API</div>
+        <div class="flow-arrow">&#8595;</div>
+        <div class="flow-step">Full-duplex processing (interruptible)</div>
+        <div class="flow-arrow">&#8595;</div>
+        <div class="flow-step highlight">Streaming audio + text deltas</div>
+        <div class="flow-arrow">&#8595;</div>
+        <div class="flow-step">Tool calls via function_call events</div>
+        <div class="flow-arrow">&#8595;</div>
+        <div class="flow-step">AudioContext playback queue</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- LLM Pipeline -->
+<section id="llm-pipeline">
+  <h2><span class="icon">&#129504;</span> LLM Pipeline (llm-middleware.ts)</h2>
+  <p>The unified middleware handles every text LLM call with 7 stages of processing.</p>
+
+  <div class="diagram-container">
+    <div class="diagram-title">Token Optimization Strategy</div>
+    <svg viewBox="0 0 900 300" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <!-- Funnel stages -->
+      <rect x="20" y="20" width="250" height="250" rx="12" fill="rgba(34,197,94,0.08)" stroke="#22c55e" stroke-width="1"/>
+      <text x="145" y="45" fill="#22c55e" font-size="13" font-weight="600" text-anchor="middle">Token Savings</text>
+
+      <rect x="40" y="60" width="210" height="35" rx="6" fill="rgba(34,197,94,0.2)" stroke="#22c55e" stroke-width="1"/>
+      <text x="145" y="82" fill="#86efac" font-size="11" text-anchor="middle">Offline commands: ~35% queries = 0 tokens</text>
+
+      <rect x="40" y="105" width="210" height="35" rx="6" fill="rgba(34,197,94,0.15)" stroke="#22c55e" stroke-width="1"/>
+      <text x="145" y="127" fill="#86efac" font-size="11" text-anchor="middle">Response cache: 5-min TTL = 0 tokens</text>
+
+      <rect x="40" y="150" width="210" height="35" rx="6" fill="rgba(234,179,8,0.15)" stroke="#eab308" stroke-width="1"/>
+      <text x="145" y="172" fill="#fde047" font-size="11" text-anchor="middle">System prompt: 393 tokens (was 1500)</text>
+
+      <rect x="40" y="195" width="210" height="35" rx="6" fill="rgba(249,115,22,0.15)" stroke="#f97316" stroke-width="1"/>
+      <text x="145" y="217" fill="#fdba74" font-size="11" text-anchor="middle">Smart model routing: fast vs smart</text>
+
+      <rect x="40" y="240" width="210" height="20" rx="4" fill="rgba(99,102,241,0.15)" stroke="#6366f1" stroke-width="1"/>
+      <text x="145" y="255" fill="#a5b4fc" font-size="10" text-anchor="middle">Daily budget: 200K tokens</text>
+
+      <!-- Context injection detail -->
+      <rect x="310" y="20" width="280" height="250" rx="12" fill="rgba(236,72,153,0.06)" stroke="#ec4899" stroke-width="1"/>
+      <text x="450" y="45" fill="#ec4899" font-size="13" font-weight="600" text-anchor="middle">Context Injection (Tiered)</text>
+
+      <rect x="330" y="60" width="240" height="28" rx="5" fill="rgba(239,68,68,0.15)" stroke="#ef4444" stroke-width="1"/>
+      <text x="450" y="79" fill="#fca5a5" font-size="10" text-anchor="middle">System prompt (~393 tokens) - NEVER trimmed</text>
+
+      <rect x="330" y="96" width="240" height="28" rx="5" fill="rgba(249,115,22,0.12)" stroke="#f97316" stroke-width="1"/>
+      <text x="450" y="115" fill="#fdba74" font-size="10" text-anchor="middle">Family names (always injected)</text>
+
+      <rect x="330" y="132" width="240" height="28" rx="5" fill="rgba(234,179,8,0.12)" stroke="#eab308" stroke-width="1"/>
+      <text x="450" y="151" fill="#fde047" font-size="10" text-anchor="middle">Relevant memories (keyword-gated, LIMIT 8)</text>
+
+      <rect x="330" y="168" width="240" height="28" rx="5" fill="rgba(34,197,94,0.12)" stroke="#22c55e" stroke-width="1"/>
+      <text x="450" y="187" fill="#86efac" font-size="10" text-anchor="middle">Calendar events (keyword-gated, LIMIT 5)</text>
+
+      <rect x="330" y="204" width="240" height="28" rx="5" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" stroke-width="1"/>
+      <text x="450" y="223" fill="#93c5fd" font-size="10" text-anchor="middle">Tasks, grocery, meals (keyword-gated)</text>
+
+      <rect x="330" y="240" width="240" height="22" rx="4" fill="rgba(99,102,241,0.1)" stroke="#6366f1" stroke-width="1"/>
+      <text x="450" y="256" fill="#a5b4fc" font-size="10" text-anchor="middle">Trim to 8K input token budget</text>
+
+      <!-- Security pipeline -->
+      <rect x="630" y="20" width="250" height="250" rx="12" fill="rgba(239,68,68,0.06)" stroke="#ef4444" stroke-width="1"/>
+      <text x="755" y="45" fill="#ef4444" font-size="13" font-weight="600" text-anchor="middle">Security Pipeline</text>
+
+      <rect x="650" y="60" width="210" height="35" rx="6" fill="rgba(239,68,68,0.12)" stroke="#ef4444" stroke-width="1"/>
+      <text x="755" y="82" fill="#fca5a5" font-size="11" text-anchor="middle">PII Redaction (SSN/CC/email/phone)</text>
+
+      <rect x="650" y="105" width="210" height="35" rx="6" fill="rgba(249,115,22,0.12)" stroke="#f97316" stroke-width="1"/>
+      <text x="755" y="127" fill="#fdba74" font-size="11" text-anchor="middle">Context sanitization (anti-injection)</text>
+
+      <rect x="650" y="150" width="210" height="35" rx="6" fill="rgba(234,179,8,0.12)" stroke="#eab308" stroke-width="1"/>
+      <text x="755" y="172" fill="#fde047" font-size="11" text-anchor="middle">Tool call validation (max 3 iter)</text>
+
+      <rect x="650" y="195" width="210" height="35" rx="6" fill="rgba(34,197,94,0.12)" stroke="#22c55e" stroke-width="1"/>
+      <text x="755" y="217" fill="#86efac" font-size="11" text-anchor="middle">PII Rehydration (restore values)</text>
+
+      <rect x="650" y="240" width="210" height="22" rx="4" fill="rgba(99,102,241,0.1)" stroke="#6366f1" stroke-width="1"/>
+      <text x="755" y="256" fill="#a5b4fc" font-size="10" text-anchor="middle">Usage + conversation logging</text>
+    </svg>
+  </div>
+</section>
+
+<!-- Tool System -->
+<section id="tool-system">
+  <h2><span class="icon">&#128295;</span> Tool System</h2>
+  <p>15+ built-in tools registered across 3 files, plus custom skill execution with SSRF protection.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title"><span class="badge badge-purple">tool-executor.ts</span> Core Tools</div>
+      <div class="card-desc">
+        <strong>save_memory</strong> - Persist facts, preferences, decisions<br>
+        <strong>recall_memory</strong> - Search stored memories<br>
+        <strong>manage_task</strong> - CRUD tasks with priority<br>
+        <strong>get_usage</strong> - Token budget stats
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="badge badge-blue">scheduler.ts</span> Calendar Tools</div>
+      <div class="card-desc">
+        <strong>get_calendar</strong> - Query events by date range<br>
+        <strong>create_event</strong> - New calendar events<br>
+        <strong>update_event</strong> - Modify existing events<br>
+        <strong>delete_event</strong> - Remove events (single/series)<br>
+        <strong>set_reminder</strong> - Create alarms<br>
+        <strong>get_family</strong> - List family members
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="badge badge-green">household-tools.ts</span> Household Tools</div>
+      <div class="card-desc">
+        <strong>manage_grocery</strong> - Shopping list with categories<br>
+        <strong>manage_meals</strong> - Meal planning by date<br>
+        <strong>manage_activity</strong> - Kids' recurring activities<br>
+        <strong>manage_chore</strong> - Chores with points/leaderboard<br>
+        <strong>manage_skill</strong> - Custom skill creation
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="badge badge-orange">Custom Skills</span> User-Created</div>
+      <div class="card-desc">
+        <strong>web_scraper</strong> - Fetch & parse web pages<br>
+        <strong>api_caller</strong> - Call external APIs<br>
+        <strong>data_lookup</strong> - Query database (hardened)<br>
+        <em>Trigger phrases activate skills automatically</em><br>
+        <em>SSRF protection blocks private IPs</em>
+      </div>
+    </div>
+  </div>
+
+  <div class="diagram-container">
+    <div class="diagram-title">Tool Call Protocol (Text-Based)</div>
+    <div class="code-block">
+<span class="cm">// LLM outputs tool calls in this format:</span>
+```tool_call
+{<span class="str">"name"</span>: <span class="str">"manage_grocery"</span>, <span class="str">"arguments"</span>: {<span class="str">"action"</span>: <span class="str">"add"</span>, <span class="str">"item"</span>: <span class="str">"milk"</span>}}
+```
+
+<span class="cm">// Parser also handles Python-style and inline JSON:</span>
+<span class="fn">manage_grocery</span>(action=<span class="str">'add'</span>, item=<span class="str">'milk'</span>)
+{<span class="str">"name"</span>: <span class="str">"manage_grocery"</span>, <span class="str">"arguments"</span>: {<span class="str">"action"</span>: <span class="str">"add"</span>}}
+    </div>
+  </div>
+</section>
+
+<!-- Database -->
+<section id="database">
+  <h2><span class="icon">&#128451;</span> Database Schema (16 Tables)</h2>
+  <p>Local SQLite with WAL mode, 5 migration phases, automatic backups.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Table</th><th>Phase</th><th>Purpose</th><th>Key Columns</th></tr></thead>
+      <tbody>
+        <tr><td><strong>family_members</strong></td><td><span class="badge badge-purple">1</span></td><td>Family profiles</td><td>name, role, age, birthday, pin_hash, dietary_restrictions</td></tr>
+        <tr><td><strong>memories</strong></td><td><span class="badge badge-purple">1</span></td><td>Long-term facts & preferences</td><td>topic, content, type, importance, tags, access_count</td></tr>
+        <tr><td><strong>tasks</strong></td><td><span class="badge badge-purple">1</span></td><td>To-do items & chores</td><td>title, status, priority, assigned_to, due_date, points</td></tr>
+        <tr><td><strong>usage_logs</strong></td><td><span class="badge badge-purple">1</span></td><td>Token consumption tracking</td><td>model, text_input_tokens, text_output_tokens, source</td></tr>
+        <tr><td><strong>settings</strong></td><td><span class="badge badge-purple">1</span></td><td>Key-value configuration</td><td>key, value</td></tr>
+        <tr><td><strong>calendar_events</strong></td><td><span class="badge badge-blue">2</span></td><td>Scheduled events</td><td>title, start_time, end_time, location, recurring</td></tr>
+        <tr><td><strong>scheduled_reminders</strong></td><td><span class="badge badge-blue">2</span></td><td>Reminder triggers</td><td>message, cron_expression, next_fire_time, delivery_status</td></tr>
+        <tr><td><strong>special_dates</strong></td><td><span class="badge badge-blue">2</span></td><td>Birthdays & anniversaries</td><td>title, date, reminder_days_before</td></tr>
+        <tr><td><strong>grocery_items</strong></td><td><span class="badge badge-green">3</span></td><td>Shopping list</td><td>item, quantity, unit, category, completed</td></tr>
+        <tr><td><strong>meal_plans</strong></td><td><span class="badge badge-green">3</span></td><td>Meal planning</td><td>date, meal_type, recipe, ingredients</td></tr>
+        <tr><td><strong>skills</strong></td><td><span class="badge badge-green">3</span></td><td>Custom automations</td><td>name, type, trigger_phrases, config, use_count</td></tr>
+        <tr><td><strong>skill_logs</strong></td><td><span class="badge badge-green">3</span></td><td>Skill execution history</td><td>skill_id, result, success, error</td></tr>
+        <tr><td><strong>memory_embeddings</strong></td><td><span class="badge badge-yellow">4</span></td><td>Vector embeddings</td><td>memory_id, embedding (JSON blob), model</td></tr>
+        <tr><td><strong>episodes</strong></td><td><span class="badge badge-yellow">4</span></td><td>Session summaries</td><td>event_type, summary, details, session_id</td></tr>
+        <tr><td><strong>conversation_logs</strong></td><td><span class="badge badge-orange">5</span></td><td>Full Q&A history</td><td>session_id, role, content, model, tools_used</td></tr>
+        <tr><td><strong>schema_version</strong></td><td><span class="badge badge-red">0</span></td><td>Migration tracking</td><td>version, applied_at, description</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- API Routes -->
+<section id="api-routes">
+  <h2><span class="icon">&#128268;</span> API Routes (19 Endpoints)</h2>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title"><span class="badge badge-green">POST</span> /api/chat</div>
+      <div class="card-desc">Main text LLM endpoint. Validates input, tries offline, calls LLM middleware with full pipeline.</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="badge badge-green">POST</span> /api/chat/stream</div>
+      <div class="card-desc">SSE streaming endpoint. Returns progressive text chunks for real-time rendering.</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="badge badge-green">POST</span> /api/tts</div>
+      <div class="card-desc">Text-to-speech via Google Translate TTS. Splits text into 190-char chunks at sentence boundaries.</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="badge badge-blue">CRUD</span> /api/family</div>
+      <div class="card-desc">Family member management. GET list, POST create/switch (with PIN), PUT update, DELETE remove.</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="badge badge-blue">CRUD</span> /api/calendar</div>
+      <div class="card-desc">Calendar event queries by date range. Supports family member filtering.</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="badge badge-blue">CRUD</span> /api/grocery</div>
+      <div class="card-desc">Grocery list management. Add, complete, remove items with category auto-detection.</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="badge badge-blue">CRUD</span> /api/chores</div>
+      <div class="card-desc">Chore assignment with points/stars. Leaderboard tracking across family.</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="badge badge-blue">CRUD</span> /api/meals</div>
+      <div class="card-desc">Meal planning by date and type (breakfast/lunch/dinner/snack).</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="badge badge-cyan">POST</span> /api/tools/*</div>
+      <div class="card-desc">Dynamic tool execution. Routes to executeTool() based on path parameter.</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="badge badge-yellow">CRUD</span> /api/skills</div>
+      <div class="card-desc">Custom skill management. Create web scrapers, API callers, data lookups.</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="badge badge-purple">POST</span> /api/ai/realtime-token</div>
+      <div class="card-desc">Generate ephemeral OpenAI Realtime token for premium voice mode.</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="badge badge-purple">GET/POST</span> /api/settings</div>
+      <div class="card-desc">API key management (OpenAI, Euri). Stored in cookies and database.</div>
+    </div>
+  </div>
+</section>
+
+<!-- UI Components -->
+<section id="components">
+  <h2><span class="icon">&#127912;</span> UI Components</h2>
+  <div class="two-col">
+    <div>
+      <h3>Pages</h3>
+      <div class="card" style="margin-bottom:1rem">
+        <div class="card-title">/ (Chat Page)</div>
+        <div class="card-desc">Animated orb interface with 3 states (idle/listening/speaking). Model picker, wake word toggle, chat history with timestamps. Handles both voice modes.</div>
+      </div>
+      <div class="card">
+        <div class="card-title">/dashboard</div>
+        <div class="card-desc">3-column responsive grid with 5 widgets: Calendar, Tasks, Grocery, Family Status, Skills. Inline chat widget. Independent data fetching per widget.</div>
+      </div>
+    </div>
+    <div>
+      <h3>Widgets & Components</h3>
+      <div class="card" style="margin-bottom:0.5rem"><div class="card-title">CalendarWidget</div><div class="card-desc">Day/week view with navigation, time formatting, location display</div></div>
+      <div class="card" style="margin-bottom:0.5rem"><div class="card-title">TasksWidget</div><div class="card-desc">Pending tasks with priority colors and overdue alerts</div></div>
+      <div class="card" style="margin-bottom:0.5rem"><div class="card-title">GroceryWidget</div><div class="card-desc">Mini grocery list with category icons, add/complete inline</div></div>
+      <div class="card" style="margin-bottom:0.5rem"><div class="card-title">FamilyStatus</div><div class="card-desc">Family members with role badges, switch active member</div></div>
+      <div class="card" style="margin-bottom:0.5rem"><div class="card-title">SkillsWidget</div><div class="card-desc">Custom skills list with toggle, use count, delete</div></div>
+      <div class="card"><div class="card-title">ChoreBoard</div><div class="card-desc">Chore assignment with points system and leaderboard</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- Security -->
+<section id="security">
+  <h2><span class="icon">&#128274;</span> Security Architecture</h2>
+  <p>10 P1 critical security fixes applied on 2026-02-15.</p>
+
+  <div class="security-grid">
+    <div class="security-card fixed">
+      <h4>Auth Middleware</h4>
+      <p>VINEGAR_AUTH_TOKEN env var. Bearer header + cookie support. All /api/* routes protected.</p>
+    </div>
+    <div class="security-card fixed">
+      <h4>PII Redaction</h4>
+      <p>SSN, credit card, email, phone, address redacted before LLM. Rehydrated after. Cache eviction at 500 entries.</p>
+    </div>
+    <div class="security-card fixed">
+      <h4>SQL Injection Hardening</h4>
+      <p>data_lookup blocks DROP/DELETE/INSERT/UNION/WITH/subqueries. Sensitive tables blocked. LIMIT required.</p>
+    </div>
+    <div class="security-card fixed">
+      <h4>Prompt Injection Defense</h4>
+      <p>Context sanitized to strip tool_call patterns. parseToolCall rejects responses containing memory markers.</p>
+    </div>
+    <div class="security-card fixed">
+      <h4>SSRF Protection</h4>
+      <p>isUrlSafe() blocks localhost, private IPs (10.x, 172.x, 192.168.x), cloud metadata (169.254.169.254).</p>
+    </div>
+    <div class="security-card fixed">
+      <h4>PIN Security</h4>
+      <p>bcrypt hashing. PIN required when pin_hash exists (not just when submitted). Bypass fixed.</p>
+    </div>
+    <div class="security-card fixed">
+      <h4>Input Validation</h4>
+      <p>Zod schemas on all API routes. Date parsing with NaN guards. Request timeouts (30s).</p>
+    </div>
+    <div class="security-card fixed">
+      <h4>Token Budget</h4>
+      <p>200K daily limit enforced. Per-request 8K input cap. Prevents runaway LLM costs.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Background Jobs -->
+<section id="background">
+  <h2><span class="icon">&#9881;</span> Background Services</h2>
+  <div class="two-col">
+    <div>
+      <h3>Scheduler (30s interval)</h3>
+      <div class="card">
+        <div class="card-desc">
+          Evaluates <strong>scheduled_reminders</strong> table every 30 seconds. Fires due reminders via event bus. Handles recurring reminders (daily, weekly) by computing next fire time.
+        </div>
+      </div>
+    </div>
+    <div>
+      <h3>Background Worker (60s interval)</h3>
+      <div class="card">
+        <div class="card-desc">
+          <strong>embed_memories</strong> (5 min) - Generate vector embeddings for new memories<br>
+          <strong>extend_recurring_events</strong> (daily) - Create calendar events 2 weeks ahead<br>
+          <strong>db_backup</strong> (daily) - VACUUM INTO backups/, keep last 7<br>
+          <strong>cleanup_old_logs</strong> (daily) - Delete logs older than 30-90 days
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- File Structure -->
+<section id="file-structure">
+  <h2><span class="icon">&#128193;</span> File Structure</h2>
+  <div class="file-tree">
+<span class="dir">src/</span>
+  <span class="dir">app/</span>
+    <span class="file">page.tsx</span> <span class="desc"># Main chat + voice page</span>
+    <span class="file">layout.tsx</span> <span class="desc"># Root layout, fonts, server init</span>
+    <span class="dir">dashboard/</span>
+      <span class="file">page.tsx</span> <span class="desc"># Multi-widget dashboard</span>
+    <span class="dir">api/</span>
+      <span class="dir">chat/</span>
+        <span class="file">route.ts</span> <span class="desc"># Text LLM endpoint</span>
+        <span class="dir">stream/</span>
+          <span class="file">route.ts</span> <span class="desc"># SSE streaming</span>
+      <span class="file">tts/route.ts</span> <span class="desc"># Google TTS</span>
+      <span class="file">family/route.ts</span> <span class="desc"># Family CRUD + PIN</span>
+      <span class="file">calendar/route.ts</span> <span class="desc"># Calendar queries</span>
+      <span class="file">grocery/route.ts</span> <span class="desc"># Shopping list</span>
+      <span class="file">chores/route.ts</span> <span class="desc"># Chore management</span>
+      <span class="file">meals/route.ts</span> <span class="desc"># Meal planning</span>
+      <span class="file">skills/route.ts</span> <span class="desc"># Custom skills</span>
+      <span class="file">activities/route.ts</span> <span class="desc"># Recurring activities</span>
+      <span class="file">settings/route.ts</span> <span class="desc"># API key config</span>
+      <span class="file">usage/route.ts</span> <span class="desc"># Token tracking</span>
+      <span class="file">conversations/route.ts</span> <span class="desc"># Q&A logging</span>
+      <span class="file">reminders/route.ts</span> <span class="desc"># Reminder management</span>
+      <span class="dir">tools/</span> <span class="desc"># Dynamic tool execution</span>
+      <span class="dir">ai/</span>
+        <span class="file">realtime-token/route.ts</span> <span class="desc"># OpenAI ephemeral token</span>
+  <span class="dir">components/</span>
+    <span class="file">family-setup.tsx</span> <span class="desc"># Onboarding wizard</span>
+    <span class="file">family-switcher.tsx</span> <span class="desc"># Active member selector</span>
+    <span class="file">grocery-list.tsx</span> <span class="desc"># Full grocery manager</span>
+    <span class="file">chore-board.tsx</span> <span class="desc"># Chores + leaderboard</span>
+    <span class="file">activity-schedule.tsx</span> <span class="desc"># Activities calendar</span>
+    <span class="file">settings-modal.tsx</span> <span class="desc"># API key modal</span>
+    <span class="file">client-only.tsx</span> <span class="desc"># SSR hydration wrapper</span>
+    <span class="dir">dashboard/</span>
+      <span class="file">calendar-widget.tsx</span>
+      <span class="file">tasks-widget.tsx</span>
+      <span class="file">grocery-widget.tsx</span>
+      <span class="file">family-status.tsx</span>
+      <span class="file">skills-widget.tsx</span>
+  <span class="dir">hooks/</span>
+    <span class="file">useBrowserVoice.ts</span> <span class="desc"># Free voice (Web Speech API)</span>
+    <span class="file">useRealtimeVoice.ts</span> <span class="desc"># Premium voice (OpenAI Realtime)</span>
+    <span class="file">useWakeWord.ts</span> <span class="desc"># Passive wake word detection</span>
+  <span class="dir">lib/</span>
+    <span class="file">db.ts</span> <span class="desc"># SQLite + migrations (16 tables)</span>
+    <span class="file">init.ts</span> <span class="desc"># Server-side initialization</span>
+    <span class="file">llm-middleware.ts</span> <span class="desc"># Unified LLM pipeline</span>
+    <span class="file">tool-executor.ts</span> <span class="desc"># Tool registry + execution</span>
+    <span class="file">scheduler.ts</span> <span class="desc"># Calendar tools + reminders</span>
+    <span class="file">household-tools.ts</span> <span class="desc"># Grocery/meals/chores/skills</span>
+    <span class="file">pii-redactor.ts</span> <span class="desc"># PII redact/rehydrate</span>
+    <span class="file">euri-client.ts</span> <span class="desc"># Euri API client</span>
+    <span class="file">euri-models.ts</span> <span class="desc"># 30+ model definitions</span>
+    <span class="file">token-budget.ts</span> <span class="desc"># 200K daily limit</span>
+    <span class="file">vinegar-context.ts</span> <span class="desc"># System prompt (~393 tokens)</span>
+    <span class="file">offline-commands.ts</span> <span class="desc"># Zero-token responses</span>
+    <span class="file">voice.ts</span> <span class="desc"># OpenAI Realtime class</span>
+    <span class="file">events.ts</span> <span class="desc"># Event bus (pub/sub)</span>
+    <span class="file">embeddings.ts</span> <span class="desc"># Semantic search</span>
+    <span class="file">background-worker.ts</span> <span class="desc"># Periodic jobs</span>
+    <span class="file">conversation-logger.ts</span> <span class="desc"># Q&A logging</span>
+    <span class="file">validators.ts</span> <span class="desc"># 20+ Zod schemas</span>
+    <span class="file">calendar-sync.ts</span> <span class="desc"># Google Calendar (planned)</span>
+    <span class="file">memory.ts</span> <span class="desc"># Memory utilities</span>
+    <span class="file">episodes.ts</span> <span class="desc"># Session tracking</span>
+    <span class="file">pricing.ts</span> <span class="desc"># Cost estimation</span>
+  <span class="file">middleware.ts</span> <span class="desc"># Auth middleware (all /api/*)</span>
+  </div>
+</section>
+
+<!-- Tech Stack -->
+<section id="tech-stack">
+  <h2><span class="icon">&#128736;</span> Tech Stack</h2>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Frontend</div>
+      <div class="card-desc">
+        Next.js 14 (App Router)<br>
+        React 18<br>
+        TailwindCSS<br>
+        Lucide React (icons)
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Backend</div>
+      <div class="card-desc">
+        Next.js API Routes<br>
+        better-sqlite3 (SQLite)<br>
+        bcryptjs (PIN hashing)<br>
+        zod (validation)
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">AI / LLM</div>
+      <div class="card-desc">
+        Euri API (30+ models)<br>
+        OpenAI Realtime API<br>
+        Web Speech API (STT)<br>
+        Google Translate TTS
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Mobile</div>
+      <div class="card-desc">
+        Capacitor 5 (WebView)<br>
+        Android APK<br>
+        RECORD_AUDIO permission<br>
+        Points to LAN server
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Infrastructure</div>
+      <div class="card-desc">
+        LAN-only (192.168.1.15)<br>
+        SQLite file-based DB<br>
+        No external dependencies<br>
+        Self-hosted, privacy-first
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Development</div>
+      <div class="card-desc">
+        TypeScript (strict)<br>
+        Git + GitHub<br>
+        Claude Code (assistant)<br>
+        ~9,047 lines of code
+      </div>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<footer>
+  <p>Vinegar Home Assistant &mdash; Architecture Documentation &mdash; Generated 2026-02-15</p>
+  <p style="margin-top:0.5rem;color:var(--text3)">9,047 lines of TypeScript across 60 source files. Built with Next.js 14, React 18, SQLite, and 30+ AI models.</p>
+</footer>
+
+</body>
+</html>

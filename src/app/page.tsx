@@ -151,7 +151,7 @@ export default function VinegarHome() {
         await startListening();
         setIsActive(true);
       } catch (err) {
-        console.error("Failed to start:", err);
+        // Voice activation failed - error state will show in UI
       }
     }
   }, [isActive, connect, disconnect, startListening, stopListening]);
