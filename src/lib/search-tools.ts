@@ -10,7 +10,7 @@ import { registerTool } from './tool-executor';
 const REQUEST_TIMEOUT_MS = 10000;
 const MAX_RESULTS = 5;
 
-interface SearchResult {
+export interface SearchResult {
   title: string;
   url: string;
   snippet: string;
@@ -49,7 +49,7 @@ async function queryInstantAnswer(query: string): Promise<{ abstract: string; so
 
 // ─── DuckDuckGo HTML Search (full web results) ───
 
-async function searchDuckDuckGo(query: string): Promise<SearchResult[]> {
+export async function searchDuckDuckGo(query: string): Promise<SearchResult[]> {
   const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
 
   const controller = new AbortController();

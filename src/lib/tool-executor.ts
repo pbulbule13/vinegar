@@ -846,5 +846,44 @@ export function getToolSchemas(): Array<{ type: string; name: string; descriptio
         },
       },
     },
+    {
+      type: 'function',
+      name: 'get_traffic',
+      description: 'Check traffic and commute time to a destination. Use when asked about traffic, commute, ETA, or "how long to get to".',
+      parameters: {
+        type: 'object',
+        properties: {
+          from: { type: 'string', description: 'Origin address (defaults to home_location from settings)' },
+          to: { type: 'string', description: 'Destination address (defaults to work_location from settings)' },
+        },
+      },
+    },
+    {
+      type: 'function',
+      name: 'find_nearby',
+      description: 'Find restaurants, stores, or places nearby. Use for "near me", "closest", or "best [place] nearby".',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'What to search for (e.g., "pizza", "South Indian food", "gas station")' },
+          type: { type: 'string', description: 'Place type filter (restaurant, grocery_or_supermarket, gas_station, pharmacy, etc.)' },
+          near: { type: 'string', description: 'Location to search near (defaults to home_location from settings)' },
+          radius_miles: { type: 'number', description: 'Search radius in miles (default 5, max 30)' },
+        },
+      },
+    },
+    {
+      type: 'function',
+      name: 'check_deals',
+      description: 'Check grocery store deals and offers. Use when asked about deals, sales, offers, or weekly ads.',
+      parameters: {
+        type: 'object',
+        properties: {
+          store: { type: 'string', description: 'Store name (Safeway, Costco, Walmart, Target, etc.)' },
+          item: { type: 'string', description: 'Item to find deals for (chicken, milk, etc.)' },
+          zip_code: { type: 'string', description: 'ZIP code (defaults to home_zip from settings)' },
+        },
+      },
+    },
   ];
 }

@@ -4,12 +4,13 @@
  * Can be triggered on-demand via get_briefing tool or by scheduled background job.
  */
 
-import { db } from './db';
+import { db, getSetting } from './db';
 import { registerTool, executeTool } from './tool-executor';
 
 interface BriefingData {
   greeting: string;
   weather: string | null;
+  traffic: string | null;
   calendar: string[];
   tasks: string[];
   grocery_count: number;
@@ -41,6 +42,19 @@ export async function generateBriefing(): Promise<BriefingData> {
       weather = weatherResult.message;
     }
   } catch {}
+
+  // 2b. Traffic (only if Google Maps API key is configured)
+  let traffic: string | null = null;
+  const hasGoogleMaps = process.env.GOOGLE_MAPS_API_KEY || getSetting('google_maps_api_key');
+  const hasWorkLocation = getSetting('work_location');
+  if (hasGoogleMaps && hasWorkLocation) {
+    try {
+      const trafficResult = await executeTool('get_traffic', {});
+      if (trafficResult.success && trafficResult.message) {
+        traffic = trafficResult.message;
+      }
+    } catch {}
+  }
 
   // 3. Calendar events for today
   const calendar: string[] = [];
@@ -102,6 +116,7 @@ export async function generateBriefing(): Promise<BriefingData> {
   const parts: string[] = [greeting];
 
   if (weather) parts.push(`Weather: ${weather}`);
+  if (traffic) parts.push(`Commute: ${traffic}`);
 
   if (calendar.length > 0) {
     parts.push(`You have ${calendar.length} event${calendar.length > 1 ? 's' : ''} today:`);
@@ -127,6 +142,7 @@ export async function generateBriefing(): Promise<BriefingData> {
   return {
     greeting,
     weather,
+    traffic,
     calendar,
     tasks,
     grocery_count,

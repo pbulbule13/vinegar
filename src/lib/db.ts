@@ -344,6 +344,46 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 7,
+    description: 'Phase 8: location settings + US 2026 federal holidays',
+    up: (db) => {
+      // Location settings for traffic/nearby/deals features
+      const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      insertSetting.run('home_location', '');
+      insertSetting.run('work_location', '');
+      insertSetting.run('home_zip', '');
+      insertSetting.run('home_lat', '');
+      insertSetting.run('home_lng', '');
+      insertSetting.run('favorite_locations', '[]');
+
+      // Populate 2026 US Federal Holidays into calendar_events
+      const holidays = [
+        { id: 'hol-2026-newyear', title: "New Year's Day", date: '2026-01-01' },
+        { id: 'hol-2026-mlk', title: 'Martin Luther King Jr. Day', date: '2026-01-19' },
+        { id: 'hol-2026-presidents', title: "Presidents' Day", date: '2026-02-16' },
+        { id: 'hol-2026-memorial', title: 'Memorial Day', date: '2026-05-25' },
+        { id: 'hol-2026-juneteenth', title: 'Juneteenth', date: '2026-06-19' },
+        { id: 'hol-2026-independence', title: 'Independence Day', date: '2026-07-04' },
+        { id: 'hol-2026-labor', title: 'Labor Day', date: '2026-09-07' },
+        { id: 'hol-2026-columbus', title: 'Columbus Day', date: '2026-10-12' },
+        { id: 'hol-2026-veterans', title: "Veterans Day", date: '2026-11-11' },
+        { id: 'hol-2026-thanksgiving', title: 'Thanksgiving', date: '2026-11-26' },
+        { id: 'hol-2026-christmas', title: 'Christmas Day', date: '2026-12-25' },
+      ];
+
+      const insertHoliday = db.prepare(`
+        INSERT OR IGNORE INTO calendar_events (id, title, start_time, end_time, all_day, source)
+        VALUES (?, ?, ?, ?, 1, 'holiday')
+      `);
+
+      for (const h of holidays) {
+        const startTs = Math.floor(new Date(h.date + 'T00:00:00').getTime() / 1000);
+        const endTs = startTs + 86400; // next day
+        insertHoliday.run(h.id, h.title, startTs, endTs);
+      }
+    },
+  },
 ];
 
 export function runMigrations(): void {
