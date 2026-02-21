@@ -1,0 +1,1929 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vinegar Home Assistant - System Documentation</title>
+  <style>
+    /* ─── Reset & Base ─── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html {
+      scroll-behavior: smooth;
+      overflow-x: hidden;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+      background: #050508;
+      color: #e0e0e8;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.7;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ─── Scrollbar ─── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(212,168,67,0.2); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(212,168,67,0.4); }
+
+    /* ─── Typography ─── */
+    h1, h2, h3, h4, h5, h6 {
+      color: #ffffff;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    h1 { font-size: 2.5rem; line-height: 1.2; }
+    h2 { font-size: 1.75rem; line-height: 1.3; margin-bottom: 1rem; }
+    h3 { font-size: 1.25rem; line-height: 1.4; margin-bottom: 0.75rem; }
+    h4 { font-size: 1.1rem; line-height: 1.4; margin-bottom: 0.5rem; }
+
+    p { margin-bottom: 1rem; color: rgba(255,255,255,0.75); }
+
+    a {
+      color: #d4a843;
+      text-decoration: none;
+      transition: color 0.2s, text-shadow 0.2s;
+    }
+    a:hover {
+      color: #f0c45a;
+      text-shadow: 0 0 8px rgba(212,168,67,0.3);
+    }
+
+    code, .mono {
+      font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+    }
+
+    code {
+      background: rgba(212,168,67,0.08);
+      border: 1px solid rgba(212,168,67,0.15);
+      color: #d4a843;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 0.88em;
+    }
+
+    pre {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 16px 20px;
+      overflow-x: auto;
+      margin-bottom: 1rem;
+      font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+      font-size: 0.88em;
+      line-height: 1.6;
+      color: rgba(255,255,255,0.7);
+    }
+    pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      color: inherit;
+    }
+
+    /* ─── Layout ─── */
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ─── Hero ─── */
+    .hero {
+      position: relative;
+      padding: 80px 0 60px;
+      text-align: center;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -120px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(212,168,67,0.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero h1 {
+      position: relative;
+      margin-bottom: 8px;
+    }
+    .hero h1 .accent {
+      color: #d4a843;
+      text-shadow: 0 0 30px rgba(212,168,67,0.2);
+    }
+    .hero .subtitle {
+      color: rgba(255,255,255,0.4);
+      font-size: 0.95rem;
+      margin-bottom: 20px;
+    }
+    .hero .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 20px;
+      background: rgba(212,168,67,0.08);
+      border: 1px solid rgba(212,168,67,0.2);
+      border-radius: 10px;
+      color: #d4a843;
+      font-size: 0.9rem;
+      transition: all 0.2s;
+    }
+    .hero .back-link:hover {
+      background: rgba(212,168,67,0.15);
+      box-shadow: 0 0 20px rgba(212,168,67,0.1);
+      text-shadow: none;
+    }
+
+    /* ─── Table of Contents ─── */
+    .toc {
+      padding: 40px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .toc h2 {
+      font-size: 1.1rem;
+      color: rgba(255,255,255,0.5);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 16px;
+    }
+    .toc-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 8px;
+    }
+    .toc-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.05);
+      border-radius: 8px;
+      color: rgba(255,255,255,0.7);
+      font-size: 0.92rem;
+      transition: all 0.2s;
+    }
+    .toc-item:hover {
+      background: rgba(212,168,67,0.06);
+      border-color: rgba(212,168,67,0.15);
+      color: #d4a843;
+      text-shadow: none;
+    }
+    .toc-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      background: rgba(212,168,67,0.1);
+      color: #d4a843;
+      font-size: 0.78rem;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    /* ─── Sections ─── */
+    .section {
+      padding: 50px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .section:last-child { border-bottom: none; }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+    .section-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: rgba(212,168,67,0.1);
+      border: 1px solid rgba(212,168,67,0.2);
+      color: #d4a843;
+      font-size: 0.9rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      box-shadow: 0 0 12px rgba(212,168,67,0.08);
+    }
+    .section-header h2 {
+      margin-bottom: 0;
+    }
+
+    /* ─── Cards / Info Boxes ─── */
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 14px;
+      margin-bottom: 1.5rem;
+    }
+    .info-card {
+      padding: 18px 20px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px;
+      transition: border-color 0.2s;
+    }
+    .info-card:hover {
+      border-color: rgba(212,168,67,0.15);
+    }
+    .info-card .label {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: rgba(212,168,67,0.7);
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .info-card .value {
+      color: rgba(255,255,255,0.85);
+      font-size: 0.95rem;
+    }
+
+    /* ─── Tool Cards ─── */
+    .tool-card {
+      margin-bottom: 16px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .tool-card:hover {
+      border-color: rgba(212,168,67,0.2);
+      box-shadow: 0 0 20px rgba(212,168,67,0.04);
+    }
+    .tool-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 18px;
+      cursor: pointer;
+      user-select: none;
+      background: rgba(255,255,255,0.01);
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .tool-header:hover {
+      background: rgba(212,168,67,0.03);
+    }
+    .tool-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      background: rgba(212,168,67,0.1);
+      color: #d4a843;
+      font-size: 0.78rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .tool-name {
+      font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+      color: #d4a843;
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+    .tool-desc {
+      color: rgba(255,255,255,0.5);
+      font-size: 0.88rem;
+      margin-left: auto;
+      text-align: right;
+    }
+    .tool-chevron {
+      color: rgba(255,255,255,0.2);
+      font-size: 0.8rem;
+      transition: transform 0.2s;
+      flex-shrink: 0;
+    }
+    .tool-card.open .tool-chevron {
+      transform: rotate(90deg);
+    }
+    .tool-body {
+      display: none;
+      padding: 16px 18px;
+    }
+    .tool-card.open .tool-body {
+      display: block;
+    }
+
+    /* ─── Argument Table ─── */
+    .arg-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+      font-size: 0.88rem;
+    }
+    .arg-table th {
+      text-align: left;
+      padding: 8px 12px;
+      background: rgba(212,168,67,0.06);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      color: rgba(212,168,67,0.9);
+      font-weight: 600;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .arg-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      color: rgba(255,255,255,0.7);
+      vertical-align: top;
+    }
+    .arg-table td:first-child {
+      font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+      color: #d4a843;
+      white-space: nowrap;
+    }
+    .arg-table td:nth-child(2) {
+      font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+      color: rgba(147,200,255,0.8);
+      white-space: nowrap;
+      font-size: 0.85em;
+    }
+
+    /* ─── API Route Table ─── */
+    .api-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+      font-size: 0.88rem;
+    }
+    .api-table th {
+      text-align: left;
+      padding: 10px 14px;
+      background: rgba(212,168,67,0.06);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      color: rgba(212,168,67,0.9);
+      font-weight: 600;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .api-table td {
+      padding: 10px 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      color: rgba(255,255,255,0.7);
+      vertical-align: top;
+    }
+    .api-table tr:hover td {
+      background: rgba(212,168,67,0.02);
+    }
+    .method-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-align: center;
+      min-width: 50px;
+    }
+    .method-get {
+      background: rgba(34,197,94,0.12);
+      color: #4ade80;
+      border: 1px solid rgba(34,197,94,0.2);
+    }
+    .method-post {
+      background: rgba(59,130,246,0.12);
+      color: #60a5fa;
+      border: 1px solid rgba(59,130,246,0.2);
+    }
+    .method-both {
+      background: rgba(168,85,247,0.12);
+      color: #c084fc;
+      border: 1px solid rgba(168,85,247,0.2);
+    }
+    .api-path {
+      font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+      color: #d4a843;
+      font-size: 0.9em;
+    }
+
+    /* ─── Feature List ─── */
+    .feature-list {
+      list-style: none;
+      padding: 0;
+    }
+    .feature-list li {
+      position: relative;
+      padding: 10px 0 10px 28px;
+      color: rgba(255,255,255,0.75);
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .feature-list li:last-child { border-bottom: none; }
+    .feature-list li::before {
+      content: '';
+      position: absolute;
+      left: 4px;
+      top: 16px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(212,168,67,0.4);
+      box-shadow: 0 0 6px rgba(212,168,67,0.3);
+    }
+    .feature-list li strong {
+      color: #ffffff;
+    }
+
+    /* ─── Privacy / Security Cards ─── */
+    .security-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 14px;
+    }
+    .security-card {
+      padding: 20px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px;
+      border-left: 3px solid rgba(212,168,67,0.3);
+    }
+    .security-card h4 {
+      color: #d4a843;
+      margin-bottom: 8px;
+    }
+    .security-card p {
+      font-size: 0.9rem;
+      margin-bottom: 0;
+      color: rgba(255,255,255,0.65);
+    }
+
+    /* ─── Settings Table ─── */
+    .settings-list {
+      display: grid;
+      gap: 10px;
+    }
+    .setting-item {
+      display: flex;
+      gap: 16px;
+      padding: 14px 18px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 10px;
+      align-items: baseline;
+    }
+    .setting-name {
+      font-weight: 600;
+      color: #ffffff;
+      min-width: 160px;
+      flex-shrink: 0;
+    }
+    .setting-values {
+      color: rgba(255,255,255,0.6);
+      font-size: 0.9rem;
+    }
+
+    /* ─── ASCII Diagram ─── */
+    .ascii-diagram {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 24px;
+      overflow-x: auto;
+      text-align: center;
+    }
+    .ascii-diagram pre {
+      display: inline-block;
+      text-align: left;
+      background: none;
+      border: none;
+      padding: 0;
+      margin: 0;
+      color: rgba(212,168,67,0.8);
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+
+    /* ─── Dashboard Grid ─── */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 14px;
+    }
+    .dashboard-widget {
+      padding: 20px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px;
+      text-align: center;
+    }
+    .dashboard-widget .widget-icon {
+      font-size: 1.8rem;
+      margin-bottom: 10px;
+      display: block;
+      opacity: 0.8;
+    }
+    .dashboard-widget h4 {
+      color: #d4a843;
+      margin-bottom: 6px;
+      font-size: 0.95rem;
+    }
+    .dashboard-widget p {
+      font-size: 0.85rem;
+      color: rgba(255,255,255,0.5);
+      margin-bottom: 0;
+    }
+
+    /* ─── Footer ─── */
+    .footer {
+      padding: 40px 0;
+      text-align: center;
+      color: rgba(255,255,255,0.25);
+      font-size: 0.85rem;
+    }
+    .footer a {
+      color: rgba(212,168,67,0.5);
+    }
+    .footer a:hover {
+      color: #d4a843;
+    }
+
+    /* ─── Responsive ─── */
+    @media (max-width: 768px) {
+      h1 { font-size: 1.75rem; }
+      h2 { font-size: 1.35rem; }
+      .hero { padding: 50px 0 40px; }
+      .container { padding: 0 16px; }
+      .toc-grid { grid-template-columns: 1fr; }
+      .info-grid { grid-template-columns: 1fr; }
+      .security-grid { grid-template-columns: 1fr; }
+      .dashboard-grid { grid-template-columns: 1fr 1fr; }
+      .tool-desc { display: none; }
+      .setting-item { flex-direction: column; gap: 4px; }
+      .setting-name { min-width: auto; }
+      .api-table { font-size: 0.82rem; }
+      .api-table td, .api-table th { padding: 8px 10px; }
+    }
+
+    @media (max-width: 480px) {
+      .dashboard-grid { grid-template-columns: 1fr; }
+      h1 { font-size: 1.5rem; }
+      .section { padding: 35px 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ═══════════════════ HERO ═══════════════════ -->
+  <header class="hero">
+    <div class="container">
+      <h1><span class="accent">Vinegar</span> Home Assistant</h1>
+      <p style="color: rgba(255,255,255,0.6); font-size: 1.1rem; margin-bottom: 4px;">System Documentation</p>
+      <p class="subtitle">Last updated: 2026-02-20</p>
+      <a href="/" class="back-link">&larr; Back to App</a>
+    </div>
+  </header>
+
+  <!-- ═══════════════════ TABLE OF CONTENTS ═══════════════════ -->
+  <nav class="toc">
+    <div class="container">
+      <h2>Table of Contents</h2>
+      <div class="toc-grid">
+        <a href="#overview" class="toc-item"><span class="toc-num">1</span> Overview</a>
+        <a href="#tools" class="toc-item"><span class="toc-num">2</span> Tools Reference (26)</a>
+        <a href="#api" class="toc-item"><span class="toc-num">3</span> API Routes (21)</a>
+        <a href="#voice" class="toc-item"><span class="toc-num">4</span> Voice Features</a>
+        <a href="#privacy" class="toc-item"><span class="toc-num">5</span> Privacy &amp; Security</a>
+        <a href="#settings" class="toc-item"><span class="toc-num">6</span> Settings</a>
+        <a href="#dashboard" class="toc-item"><span class="toc-num">7</span> Dashboard</a>
+        <a href="#architecture" class="toc-item"><span class="toc-num">8</span> Architecture Diagram</a>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+
+    <!-- ═══════════════════ 1. OVERVIEW ═══════════════════ -->
+    <section id="overview" class="section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-num">1</span>
+          <h2>Overview</h2>
+        </div>
+
+        <p>Vinegar is a family home AI assistant available as an Android APK and desktop server application. It runs entirely on your local home network, keeping all personal data on your own hardware.</p>
+
+        <div class="info-grid">
+          <div class="info-card">
+            <div class="label">Type</div>
+            <div class="value">Family Home AI Assistant</div>
+          </div>
+          <div class="info-card">
+            <div class="label">Platforms</div>
+            <div class="value">Android APK + Desktop Server</div>
+          </div>
+          <div class="info-card">
+            <div class="label">Frontend</div>
+            <div class="value">Next.js 14, React 18, TailwindCSS</div>
+          </div>
+          <div class="info-card">
+            <div class="label">Database</div>
+            <div class="value">SQLite (better-sqlite3), local-first</div>
+          </div>
+          <div class="info-card">
+            <div class="label">Mobile</div>
+            <div class="value">Capacitor 5 (Android builds)</div>
+          </div>
+          <div class="info-card">
+            <div class="label">LLM Provider</div>
+            <div class="value">Euri API (text generation)</div>
+          </div>
+          <div class="info-card">
+            <div class="label">Voice Input (STT)</div>
+            <div class="value">Web Speech API (in-browser)</div>
+          </div>
+          <div class="info-card">
+            <div class="label">Voice Output (TTS)</div>
+            <div class="value">Browser SpeechSynthesis (private, local)</div>
+          </div>
+          <div class="info-card">
+            <div class="label">Server Address</div>
+            <div class="value"><code>http://192.168.1.15:3001</code></div>
+          </div>
+          <div class="info-card">
+            <div class="label">Data Storage</div>
+            <div class="value">All data stored on home server, SQLite database with 18 tables, 7 migration phases</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════ 2. TOOLS REFERENCE ═══════════════════ -->
+    <section id="tools" class="section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-num">2</span>
+          <h2>Tools Reference</h2>
+        </div>
+        <p>Vinegar has <strong style="color:#d4a843;">26 built-in tools</strong> available for the AI to call during conversations. Each tool uses a registry pattern and is invoked via a text-based protocol. Click any tool below to expand its details.</p>
+
+        <!-- Tool 1: save_memory -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">1</span>
+            <span class="tool-name">save_memory</span>
+            <span class="tool-desc">Save information to long-term memory</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Persists information to Vinegar's long-term memory store so it can be recalled later. Use this for facts, preferences, routines, decisions, and information about people.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>topic</td><td>string</td><td>The topic or subject of the memory</td></tr>
+                <tr><td>content</td><td>string</td><td>The content to remember</td></tr>
+                <tr><td>type</td><td>enum</td><td>One of: <code>fact</code>, <code>preference</code>, <code>routine</code>, <code>decision</code>, <code>person</code>, <code>conversation</code></td></tr>
+                <tr><td>importance</td><td>enum</td><td>One of: <code>low</code>, <code>medium</code>, <code>high</code></td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "save_memory",
+  "args": {
+    "topic": "Dad's coffee preference",
+    "content": "Dad likes his coffee black with no sugar",
+    "type": "preference",
+    "importance": "medium"
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 2: recall_memory -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">2</span>
+            <span class="tool-name">recall_memory</span>
+            <span class="tool-desc">Search stored memories</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Searches Vinegar's memory store using a text query. Can optionally filter by memory type.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>query</td><td>string</td><td>Search query to find relevant memories</td></tr>
+                <tr><td>type</td><td>enum?</td><td>Optional filter: <code>fact</code>, <code>preference</code>, <code>routine</code>, <code>decision</code>, <code>person</code>, <code>conversation</code></td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "recall_memory",
+  "args": {
+    "query": "coffee preference",
+    "type": "preference"
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 3: manage_task -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">3</span>
+            <span class="tool-name">manage_task</span>
+            <span class="tool-desc">CRUD operations on tasks</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Create, complete, list, or delete tasks. Supports priorities and due dates for full task management.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>action</td><td>enum</td><td>One of: <code>add</code>, <code>complete</code>, <code>list</code>, <code>delete</code></td></tr>
+                <tr><td>title</td><td>string</td><td>Task title (required for add)</td></tr>
+                <tr><td>priority</td><td>string?</td><td>Priority level (e.g., <code>low</code>, <code>medium</code>, <code>high</code>)</td></tr>
+                <tr><td>status</td><td>string?</td><td>Task status filter for listing</td></tr>
+                <tr><td>due_date</td><td>string?</td><td>Due date (ISO format or natural language)</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "manage_task",
+  "args": {
+    "action": "add",
+    "title": "Buy birthday gift for Mom",
+    "priority": "high",
+    "due_date": "2026-02-25"
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 4: get_calendar -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">4</span>
+            <span class="tool-name">get_calendar</span>
+            <span class="tool-desc">Get calendar events</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Retrieves calendar events within a specified date range. Supports Unix timestamps and natural language shortcuts.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>start</td><td>string</td><td>Start of range: Unix timestamp, <code>"today"</code>, or <code>"this week"</code></td></tr>
+                <tr><td>end</td><td>string</td><td>End of range: Unix timestamp, <code>"today"</code>, or <code>"this week"</code></td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "get_calendar",
+  "args": {
+    "start": "today",
+    "end": "today"
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 5: create_event -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">5</span>
+            <span class="tool-name">create_event</span>
+            <span class="tool-desc">Create a calendar event</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Creates a new calendar event with optional description, location, and reminder.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>title</td><td>string</td><td>Event title</td></tr>
+                <tr><td>start_time</td><td>string</td><td>Start time (ISO 8601 or natural language)</td></tr>
+                <tr><td>end_time</td><td>string</td><td>End time (ISO 8601 or natural language)</td></tr>
+                <tr><td>description</td><td>string?</td><td>Event description</td></tr>
+                <tr><td>location</td><td>string?</td><td>Event location</td></tr>
+                <tr><td>reminder_minutes</td><td>number?</td><td>Reminder before event in minutes</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "create_event",
+  "args": {
+    "title": "Family dinner",
+    "start_time": "2026-02-21T18:00:00",
+    "end_time": "2026-02-21T20:00:00",
+    "location": "Home",
+    "reminder_minutes": 30
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 6: update_event -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">6</span>
+            <span class="tool-name">update_event</span>
+            <span class="tool-desc">Update a calendar event</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Modifies an existing calendar event by its ID. Only specified fields are updated.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>id</td><td>number</td><td>The event ID to update</td></tr>
+                <tr><td>title</td><td>string?</td><td>New event title</td></tr>
+                <tr><td>start_time</td><td>string?</td><td>New start time</td></tr>
+                <tr><td>end_time</td><td>string?</td><td>New end time</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "update_event",
+  "args": {
+    "id": 42,
+    "title": "Family dinner (moved)",
+    "start_time": "2026-02-22T18:30:00"
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 7: delete_event -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">7</span>
+            <span class="tool-name">delete_event</span>
+            <span class="tool-desc">Delete a calendar event</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Permanently removes a calendar event by its ID.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>id</td><td>number</td><td>The event ID to delete</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "delete_event",
+  "args": {
+    "id": 42
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 8: set_reminder -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">8</span>
+            <span class="tool-name">set_reminder</span>
+            <span class="tool-desc">Set a reminder</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Creates a reminder that will notify the specified family member at the given time.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>message</td><td>string</td><td>The reminder message</td></tr>
+                <tr><td>time</td><td>string</td><td>When to remind (ISO 8601 or natural language)</td></tr>
+                <tr><td>type</td><td>string?</td><td>Reminder type/category</td></tr>
+                <tr><td>target_member</td><td>string?</td><td>Which family member to remind</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "set_reminder",
+  "args": {
+    "message": "Take out the trash",
+    "time": "2026-02-20T07:00:00",
+    "target_member": "Dad"
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 9: manage_grocery -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">9</span>
+            <span class="tool-name">manage_grocery</span>
+            <span class="tool-desc">Manage the grocery list</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Full grocery list management: add items, mark as complete, remove, list all, or clear the entire list.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>action</td><td>enum</td><td>One of: <code>add</code>, <code>complete</code>, <code>remove</code>, <code>list</code>, <code>clear</code></td></tr>
+                <tr><td>item</td><td>string?</td><td>Item name (required for add/complete/remove)</td></tr>
+                <tr><td>quantity</td><td>number?</td><td>Quantity needed</td></tr>
+                <tr><td>unit</td><td>string?</td><td>Unit of measurement (e.g., lbs, oz, bags)</td></tr>
+                <tr><td>category</td><td>string?</td><td>Category (e.g., produce, dairy, snacks)</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "manage_grocery",
+  "args": {
+    "action": "add",
+    "item": "Whole milk",
+    "quantity": 1,
+    "unit": "gallon",
+    "category": "dairy"
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 10: manage_meals -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">10</span>
+            <span class="tool-name">manage_meals</span>
+            <span class="tool-desc">Plan meals</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Plan, retrieve, or list meals. Supports breakfast, lunch, dinner, and snacks with recipes and ingredient lists.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>action</td><td>enum</td><td>One of: <code>plan</code>, <code>get</code>, <code>list</code></td></tr>
+                <tr><td>date</td><td>string?</td><td>Date for the meal (ISO format)</td></tr>
+                <tr><td>meal_type</td><td>enum?</td><td>One of: <code>breakfast</code>, <code>lunch</code>, <code>dinner</code>, <code>snack</code></td></tr>
+                <tr><td>recipe</td><td>string?</td><td>Recipe name or description</td></tr>
+                <tr><td>ingredients</td><td>string[]?</td><td>List of ingredients needed</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "manage_meals",
+  "args": {
+    "action": "plan",
+    "date": "2026-02-21",
+    "meal_type": "dinner",
+    "recipe": "Chicken tikka masala",
+    "ingredients": ["chicken breast", "yogurt", "tikka paste", "rice"]
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 11: manage_activity -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">11</span>
+            <span class="tool-name">manage_activity</span>
+            <span class="tool-desc">Schedule recurring activities</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Manage recurring activities for children, such as classes, sports, and extracurriculars.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>action</td><td>enum</td><td>One of: <code>add</code>, <code>list</code>, <code>remove</code></td></tr>
+                <tr><td>title</td><td>string?</td><td>Activity title</td></tr>
+                <tr><td>child_name</td><td>string?</td><td>Which child the activity is for</td></tr>
+                <tr><td>day_of_week</td><td>string[]?</td><td>Days of the week (e.g., ["Monday", "Wednesday"])</td></tr>
+                <tr><td>start_time</td><td>string?</td><td>Start time (HH:MM format)</td></tr>
+                <tr><td>end_time</td><td>string?</td><td>End time (HH:MM format)</td></tr>
+                <tr><td>location</td><td>string?</td><td>Activity location</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "manage_activity",
+  "args": {
+    "action": "add",
+    "title": "Soccer practice",
+    "child_name": "Dhruv",
+    "day_of_week": ["Tuesday", "Thursday"],
+    "start_time": "16:00",
+    "end_time": "17:30",
+    "location": "Community Park"
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 12: manage_chore -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">12</span>
+            <span class="tool-name">manage_chore</span>
+            <span class="tool-desc">Assign and track chores</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Manage household chores with assignments and point tracking for gamification.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>action</td><td>enum</td><td>One of: <code>add</code>, <code>complete</code>, <code>list</code></td></tr>
+                <tr><td>title</td><td>string?</td><td>Chore name</td></tr>
+                <tr><td>assigned_to</td><td>string?</td><td>Family member assigned</td></tr>
+                <tr><td>points</td><td>number?</td><td>Points earned for completion</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "manage_chore",
+  "args": {
+    "action": "add",
+    "title": "Wash the dishes",
+    "assigned_to": "Dhruv",
+    "points": 10
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 13: manage_skill -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">13</span>
+            <span class="tool-name">manage_skill</span>
+            <span class="tool-desc">Create custom skills</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Create, list, delete, or toggle custom skills that extend Vinegar's capabilities. Skills can scrape websites, call APIs, look up data, or compose multiple operations.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>action</td><td>enum</td><td>One of: <code>create</code>, <code>list</code>, <code>delete</code>, <code>toggle</code></td></tr>
+                <tr><td>name</td><td>string?</td><td>Skill name</td></tr>
+                <tr><td>type</td><td>enum?</td><td>One of: <code>web_scraper</code>, <code>api_caller</code>, <code>data_lookup</code>, <code>composite</code></td></tr>
+                <tr><td>trigger_phrases</td><td>string[]?</td><td>Phrases that activate this skill</td></tr>
+                <tr><td>url</td><td>string?</td><td>URL for web_scraper or api_caller types</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "manage_skill",
+  "args": {
+    "action": "create",
+    "name": "School lunch menu",
+    "type": "web_scraper",
+    "trigger_phrases": ["school lunch", "cafeteria menu"],
+    "url": "https://school.example.com/lunch-menu"
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 14: get_family -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">14</span>
+            <span class="tool-name">get_family</span>
+            <span class="tool-desc">Get family members list</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Returns the list of all configured family members with their roles and preferences.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td colspan="3" style="color:rgba(255,255,255,0.4); font-style:italic;">No arguments required</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "get_family",
+  "args": {}
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 15: get_usage -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">15</span>
+            <span class="tool-name">get_usage</span>
+            <span class="tool-desc">Check API token usage</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Returns API token consumption statistics for a given period.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>period</td><td>enum</td><td>One of: <code>today</code>, <code>week</code>, <code>month</code></td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "get_usage",
+  "args": {
+    "period": "today"
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 16: get_weather -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">16</span>
+            <span class="tool-name">get_weather</span>
+            <span class="tool-desc">Current weather conditions</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Fetches current weather conditions from OpenWeatherMap. Results are cached for 30 minutes. Defaults to the configured home location if no location is specified.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>location</td><td>string?</td><td>City name or location (optional, defaults to settings)</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "get_weather",
+  "args": {
+    "location": "San Francisco"
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 17: get_forecast -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">17</span>
+            <span class="tool-name">get_forecast</span>
+            <span class="tool-desc">Multi-day weather forecast</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Gets a multi-day weather forecast (1 to 5 days) from OpenWeatherMap.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>location</td><td>string?</td><td>City name or location (optional, defaults to settings)</td></tr>
+                <tr><td>days</td><td>number?</td><td>Number of days (1-5, default 3)</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "get_forecast",
+  "args": {
+    "location": "New York",
+    "days": 5
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 18: web_search -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">18</span>
+            <span class="tool-name">web_search</span>
+            <span class="tool-desc">Search the web</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Performs a web search using DuckDuckGo (no API key required). Returns instant answers and HTML results. PII is stripped from queries before sending.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>query</td><td>string</td><td>The search query</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "web_search",
+  "args": {
+    "query": "best indoor plants for low light"
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 19: get_briefing -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">19</span>
+            <span class="tool-name">get_briefing</span>
+            <span class="tool-desc">Morning briefing</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Generates a comprehensive morning briefing combining weather, today's calendar events, pending tasks, grocery list status, upcoming reminders, and traffic conditions (when Google Maps is configured).</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td colspan="3" style="color:rgba(255,255,255,0.4); font-style:italic;">No arguments required</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "get_briefing",
+  "args": {}
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 20: run_workflow -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">20</span>
+            <span class="tool-name">run_workflow</span>
+            <span class="tool-desc">Chain multiple tools in sequence</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Executes a sequence of tool calls in order, passing results between steps. Useful for compound operations like "check weather, then plan meals, then update grocery list".</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>steps</td><td>array</td><td>Array of step objects, each with <code>tool</code> (string) and <code>args</code> (object)</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "run_workflow",
+  "args": {
+    "steps": [
+      { "tool": "get_weather", "args": {} },
+      { "tool": "get_calendar", "args": { "start": "today", "end": "today" } },
+      { "tool": "manage_task", "args": { "action": "list" } }
+    ]
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 21: find_free_time -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">21</span>
+            <span class="tool-name">find_free_time</span>
+            <span class="tool-desc">Find gaps in calendar</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Analyzes the calendar to find available time slots of at least the specified duration. Can prefer morning, afternoon, or evening slots.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>duration_minutes</td><td>number</td><td>Minimum free block duration in minutes</td></tr>
+                <tr><td>preferred_time</td><td>string?</td><td>Preferred time of day (e.g., <code>morning</code>, <code>afternoon</code>, <code>evening</code>)</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "find_free_time",
+  "args": {
+    "duration_minutes": 60,
+    "preferred_time": "afternoon"
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 22: suggest_recipe -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">22</span>
+            <span class="tool-name">suggest_recipe</span>
+            <span class="tool-desc">AI-powered recipe suggestions</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Suggests recipes based on dietary restrictions, cuisine preference, and what is currently in the grocery list. Cross-references meal history to avoid repetition.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>dietary_restrictions</td><td>string?</td><td>Dietary needs (e.g., vegetarian, gluten-free)</td></tr>
+                <tr><td>cuisine</td><td>string?</td><td>Preferred cuisine (e.g., Indian, Italian, Mexican)</td></tr>
+                <tr><td>meal_type</td><td>string?</td><td>Type of meal (breakfast, lunch, dinner, snack)</td></tr>
+                <tr><td>servings</td><td>number?</td><td>Number of servings needed</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "suggest_recipe",
+  "args": {
+    "cuisine": "Indian",
+    "meal_type": "dinner",
+    "servings": 4
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 23: manage_budget -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">23</span>
+            <span class="tool-name">manage_budget</span>
+            <span class="tool-desc">Track bills, expenses, and income</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Full budget management: add bills/subscriptions/expenses/income, mark as paid, list upcoming, and get monthly summaries.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>action</td><td>enum</td><td>One of: <code>add</code>, <code>paid</code>, <code>list</code>, <code>upcoming</code>, <code>summary</code></td></tr>
+                <tr><td>name</td><td>string?</td><td>Name of the bill/expense/income</td></tr>
+                <tr><td>amount</td><td>number?</td><td>Dollar amount</td></tr>
+                <tr><td>category</td><td>string?</td><td>Category (e.g., utilities, groceries, entertainment)</td></tr>
+                <tr><td>type</td><td>enum?</td><td>One of: <code>bill</code>, <code>subscription</code>, <code>expense</code>, <code>income</code></td></tr>
+                <tr><td>frequency</td><td>string?</td><td>Recurrence (e.g., monthly, weekly, one-time)</td></tr>
+                <tr><td>due_date</td><td>string?</td><td>Due date (ISO format)</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "manage_budget",
+  "args": {
+    "action": "add",
+    "name": "Electric bill",
+    "amount": 145.00,
+    "category": "utilities",
+    "type": "bill",
+    "frequency": "monthly",
+    "due_date": "2026-03-01"
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 24: get_traffic -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">24</span>
+            <span class="tool-name">get_traffic</span>
+            <span class="tool-desc">Check traffic and commute times</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Gets real-time traffic and commute information using Google Maps Directions API. Results are cached for 15 minutes. Defaults to the configured home-to-work route.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>from</td><td>string?</td><td>Starting address (defaults to home_location)</td></tr>
+                <tr><td>to</td><td>string?</td><td>Destination address (defaults to work_location)</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "get_traffic",
+  "args": {
+    "from": "123 Main St",
+    "to": "456 Office Blvd"
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 25: find_nearby -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">25</span>
+            <span class="tool-name">find_nearby</span>
+            <span class="tool-desc">Find places nearby</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Searches for nearby places using Google Maps Places API. Supports place type filtering and radius configuration. Geocoding results are persistently cached.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>query</td><td>string?</td><td>Search query (e.g., "pizza", "gas station")</td></tr>
+                <tr><td>type</td><td>string?</td><td>Place type (e.g., restaurant, pharmacy, school)</td></tr>
+                <tr><td>near</td><td>string?</td><td>Location to search near (defaults to home)</td></tr>
+                <tr><td>radius_miles</td><td>number?</td><td>Search radius in miles</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "find_nearby",
+  "args": {
+    "query": "Indian restaurant",
+    "near": "home",
+    "radius_miles": 5
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 26: check_deals -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">26</span>
+            <span class="tool-name">check_deals</span>
+            <span class="tool-desc">Find store deals and coupons</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Searches for deals and coupons at specific stores or for specific items using DuckDuckGo web search. Results are cached for 2 hours. No API key needed.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>store</td><td>string?</td><td>Store name (e.g., "Target", "Costco")</td></tr>
+                <tr><td>item</td><td>string?</td><td>Specific item to find deals for</td></tr>
+                <tr><td>zip_code</td><td>string?</td><td>ZIP code for local deals (defaults to settings)</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "check_deals",
+  "args": {
+    "store": "Costco",
+    "item": "diapers",
+    "zip_code": "94105"
+  }
+}</code></pre>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ═══════════════════ 3. API ROUTES ═══════════════════ -->
+    <section id="api" class="section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-num">3</span>
+          <h2>API Routes</h2>
+        </div>
+        <p>Vinegar exposes <strong style="color:#d4a843;">21 API routes</strong> for the frontend and external integrations. All routes are served from the Next.js server.</p>
+
+        <div style="overflow-x: auto;">
+          <table class="api-table">
+            <thead>
+              <tr>
+                <th>Method</th>
+                <th>Path</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="method-badge method-post">POST</span></td>
+                <td class="api-path">/api/chat</td>
+                <td>Text chat (non-streaming). Sends a message and receives a full response.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-post">POST</span></td>
+                <td class="api-path">/api/chat/stream</td>
+                <td>Streaming chat via Server-Sent Events (SSE). Tokens render in real-time.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-post">POST</span></td>
+                <td class="api-path">/api/tts</td>
+                <td>Text-to-speech fallback endpoint. Primary TTS runs client-side via SpeechSynthesis.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-get">GET</span></td>
+                <td class="api-path">/api/briefing</td>
+                <td>Morning briefing data: weather, calendar, tasks, grocery, reminders, traffic.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-get">GET</span></td>
+                <td class="api-path">/api/suggestions</td>
+                <td>Proactive suggestions: overdue tasks, upcoming events, unpaid bills.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-get">GET</span></td>
+                <td class="api-path">/api/notifications</td>
+                <td>SSE notification stream. Pushes real-time alerts to the notification bell.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-both">GET/POST</span></td>
+                <td class="api-path">/api/calendar</td>
+                <td>Calendar events. GET to list, POST to create/update/delete.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-both">GET/POST</span></td>
+                <td class="api-path">/api/grocery</td>
+                <td>Grocery list. GET to list items, POST to add/remove/complete.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-both">GET/POST</span></td>
+                <td class="api-path">/api/reminders</td>
+                <td>Reminders. GET to list, POST to create/dismiss.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-both">GET/POST</span></td>
+                <td class="api-path">/api/settings</td>
+                <td>API key settings. GET to read, POST to save keys.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-both">GET/POST</span></td>
+                <td class="api-path">/api/settings/tts</td>
+                <td>TTS and voice settings: language, speed, pitch, voice selection.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-both">GET/POST</span></td>
+                <td class="api-path">/api/settings/location</td>
+                <td>Location settings: home address, work address, ZIP, coordinates.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-both">GET/POST</span></td>
+                <td class="api-path">/api/skills</td>
+                <td>Custom skills. GET to list, POST to create/delete/toggle.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-get">GET</span></td>
+                <td class="api-path">/api/family</td>
+                <td>Family members list with roles and preferences.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-both">GET/POST</span></td>
+                <td class="api-path">/api/meals</td>
+                <td>Meal plans. GET to list, POST to plan meals.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-both">GET/POST</span></td>
+                <td class="api-path">/api/chores</td>
+                <td>Chores management with point tracking.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-get">GET</span></td>
+                <td class="api-path">/api/usage</td>
+                <td>Token usage statistics (daily, weekly, monthly).</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-both">GET/POST</span></td>
+                <td class="api-path">/api/conversations</td>
+                <td>Conversation history. GET to list, POST to save.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-post">POST</span></td>
+                <td class="api-path">/api/tools/*</td>
+                <td>Direct tool execution. Calls any registered tool by name.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════ 4. VOICE FEATURES ═══════════════════ -->
+    <section id="voice" class="section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-num">4</span>
+          <h2>Voice Features</h2>
+        </div>
+        <p>Vinegar supports full voice interaction with a wake/sleep cycle, speech recognition, and text-to-speech output -- all running privately in the browser.</p>
+
+        <h3 style="margin-top: 24px;">Wake / Sleep Cycle</h3>
+        <ul class="feature-list">
+          <li><strong>Wake word:</strong> Say <code>"Vinegar"</code> to activate voice mode. The orb transitions from idle to listening state.</li>
+          <li><strong>Sleep phrases:</strong> Say <code>"go to sleep"</code>, <code>"goodnight"</code>, or <code>"sleep"</code> to deactivate voice mode.</li>
+          <li><strong>Auto-sleep:</strong> After 60 seconds of silence, Vinegar automatically returns to sleep mode.</li>
+        </ul>
+
+        <h3 style="margin-top: 24px;">Speech-to-Text (STT)</h3>
+        <ul class="feature-list">
+          <li><strong>Engine:</strong> Web Speech API (runs entirely in the browser, no data sent externally)</li>
+          <li><strong>Languages:</strong> English US (<code>en-US</code>), English India (<code>en-IN</code>), Hindi (<code>hi-IN</code>), Marathi (<code>mr-IN</code>)</li>
+          <li><strong>Processing:</strong> Real-time transcription displayed in a floating transcript bubble</li>
+        </ul>
+
+        <h3 style="margin-top: 24px;">Text-to-Speech (TTS)</h3>
+        <ul class="feature-list">
+          <li><strong>Engine:</strong> Browser SpeechSynthesis API -- fully private, no text sent to Google or any external service</li>
+          <li><strong>Languages:</strong> English US, English India, Hindi, Marathi</li>
+          <li><strong>Speed:</strong> Configurable from 0.8x to 2.0x (default 1.2x)</li>
+          <li><strong>Pitch:</strong> Adjustable for each voice</li>
+          <li><strong>Voice selection:</strong> Automatic (best match) or manual selection from available system voices</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ═══════════════════ 5. PRIVACY & SECURITY ═══════════════════ -->
+    <section id="privacy" class="section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-num">5</span>
+          <h2>Privacy &amp; Security</h2>
+        </div>
+        <p>Vinegar is designed with privacy as a core principle. All data stays on your home server, and external API calls are carefully controlled.</p>
+
+        <div class="security-grid">
+          <div class="security-card">
+            <h4>Local-First Storage</h4>
+            <p>All data is stored in a SQLite database on your home server. Nothing is uploaded to the cloud. Your family's information never leaves your network unless explicitly requested (e.g., weather lookup).</p>
+          </div>
+          <div class="security-card">
+            <h4>PII Redaction</h4>
+            <p>Before any external API call, personally identifiable information is automatically stripped: Social Security numbers, credit card numbers, email addresses, phone numbers, and street addresses. Family names are intentionally <em>not</em> redacted for usability.</p>
+          </div>
+          <div class="security-card">
+            <h4>Private Voice Processing</h4>
+            <p>Both speech-to-text and text-to-speech run entirely in the browser using Web Speech API and SpeechSynthesis. No audio or text is sent to Google, Amazon, or any external service for voice processing.</p>
+          </div>
+          <div class="security-card">
+            <h4>CORS &amp; Security Headers</h4>
+            <p>The server enforces CORS policies and security headers via <code>next.config.js</code> to prevent unauthorized cross-origin requests.</p>
+          </div>
+          <div class="security-card">
+            <h4>Rate Limiting</h4>
+            <p>All API endpoints are rate-limited to 60 requests per minute per IP address via middleware, preventing abuse or runaway requests.</p>
+          </div>
+          <div class="security-card">
+            <h4>Child Safety Mode</h4>
+            <p>When a child is the active user, a special safety prompt is injected into the LLM context to filter inappropriate content and ensure age-appropriate responses.</p>
+          </div>
+          <div class="security-card">
+            <h4>SSRF Protection</h4>
+            <p>Custom skill URL fetches include SSRF (Server-Side Request Forgery) protection to prevent skills from accessing internal network resources maliciously.</p>
+          </div>
+          <div class="security-card">
+            <h4>Secure File Handling</h4>
+            <p>All <code>*.db</code> files, <code>.env.*</code> files, backups, and logs are excluded from version control via <code>.gitignore</code>.</p>
+          </div>
+        </div>
+
+        <h3 style="margin-top: 28px;">External API Data Exposure</h3>
+        <p>Here is exactly what data is sent to each external service:</p>
+        <div style="overflow-x: auto;">
+          <table class="api-table">
+            <thead>
+              <tr><th>Service</th><th>Data Sent</th><th>Purpose</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="color:#d4a843; font-weight:600;">Euri API</td>
+                <td>PII-redacted conversation text</td>
+                <td>LLM text generation for chat responses</td>
+              </tr>
+              <tr>
+                <td style="color:#d4a843; font-weight:600;">DuckDuckGo</td>
+                <td>PII-stripped search queries</td>
+                <td>Web search and deal lookups (no API key)</td>
+              </tr>
+              <tr>
+                <td style="color:#d4a843; font-weight:600;">OpenWeatherMap</td>
+                <td>City name only</td>
+                <td>Current weather and forecast data</td>
+              </tr>
+              <tr>
+                <td style="color:#d4a843; font-weight:600;">Google Maps</td>
+                <td>Addresses for routing/search (optional)</td>
+                <td>Traffic/commute times and nearby place search</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════ 6. SETTINGS ═══════════════════ -->
+    <section id="settings" class="section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-num">6</span>
+          <h2>Settings</h2>
+        </div>
+        <p>Configurable settings available through the Settings panel in the app.</p>
+
+        <div class="settings-list">
+          <div class="setting-item">
+            <span class="setting-name">TTS Language</span>
+            <span class="setting-values"><code>en-US</code> (English US), <code>en-IN</code> (English India), <code>hi-IN</code> (Hindi), <code>mr-IN</code> (Marathi)</span>
+          </div>
+          <div class="setting-item">
+            <span class="setting-name">TTS Speed</span>
+            <span class="setting-values">0.8x to 2.0x (default: 1.2x). Controls how fast Vinegar speaks.</span>
+          </div>
+          <div class="setting-item">
+            <span class="setting-name">TTS Voice</span>
+            <span class="setting-values">Automatic (best match for language) or manual selection from available system voices.</span>
+          </div>
+          <div class="setting-item">
+            <span class="setting-name">STT Language</span>
+            <span class="setting-values">Linked to TTS language by default, or set independently for bilingual households.</span>
+          </div>
+          <div class="setting-item">
+            <span class="setting-name">Home Location</span>
+            <span class="setting-values">Home address used as default origin for traffic and nearby searches.</span>
+          </div>
+          <div class="setting-item">
+            <span class="setting-name">Work Location</span>
+            <span class="setting-values">Work address used as default destination for commute/traffic checks.</span>
+          </div>
+          <div class="setting-item">
+            <span class="setting-name">ZIP Code</span>
+            <span class="setting-values">Used for local deal searches via <code>check_deals</code>.</span>
+          </div>
+          <div class="setting-item">
+            <span class="setting-name">Weather City</span>
+            <span class="setting-values">Default city for weather and forecast lookups when no location is specified.</span>
+          </div>
+          <div class="setting-item">
+            <span class="setting-name">Euri API Key</span>
+            <span class="setting-values">Required. API key for the Euri LLM used for all text chat responses.</span>
+          </div>
+          <div class="setting-item">
+            <span class="setting-name">OpenAI API Key</span>
+            <span class="setting-values">Optional. Used for premium voice features if configured.</span>
+          </div>
+          <div class="setting-item">
+            <span class="setting-name">OpenWeatherMap Key</span>
+            <span class="setting-values">Required for weather tools. Free tier available at openweathermap.org.</span>
+          </div>
+          <div class="setting-item">
+            <span class="setting-name">Google Maps Key</span>
+            <span class="setting-values">Optional. Enables traffic, commute, and nearby place features.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════ 7. DASHBOARD ═══════════════════ -->
+    <section id="dashboard" class="section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-num">7</span>
+          <h2>Dashboard</h2>
+        </div>
+        <p>The dashboard provides a quick overview of your household's status. Access it by tapping the dashboard icon in the navigation bar.</p>
+
+        <div class="dashboard-grid">
+          <div class="dashboard-widget">
+            <span class="widget-icon">&#x1F4CA;</span>
+            <h4>Token Usage</h4>
+            <p>Track API consumption with daily, weekly, and monthly charts. Monitor costs and optimize usage.</p>
+          </div>
+          <div class="dashboard-widget">
+            <span class="widget-icon">&#x1F4C5;</span>
+            <h4>Upcoming Events</h4>
+            <p>See today's and tomorrow's calendar events at a glance. Includes US federal holidays.</p>
+          </div>
+          <div class="dashboard-widget">
+            <span class="widget-icon">&#x2705;</span>
+            <h4>Task Summary</h4>
+            <p>View pending, overdue, and completed tasks. Quickly see what needs attention.</p>
+          </div>
+          <div class="dashboard-widget">
+            <span class="widget-icon">&#x1F6D2;</span>
+            <h4>Grocery List</h4>
+            <p>Preview of grocery items needed. Tap to expand or add items via voice.</p>
+          </div>
+          <div class="dashboard-widget">
+            <span class="widget-icon">&#x1F46A;</span>
+            <h4>Family Status</h4>
+            <p>See family members, active user, and child safety mode status.</p>
+          </div>
+          <div class="dashboard-widget">
+            <span class="widget-icon">&#x1F4B0;</span>
+            <h4>Budget Overview</h4>
+            <p>Monthly summary of bills, subscriptions, expenses, and income. Highlights upcoming due dates.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════ 8. ARCHITECTURE ═══════════════════ -->
+    <section id="architecture" class="section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-num">8</span>
+          <h2>Architecture Diagram</h2>
+        </div>
+        <p>High-level system architecture showing how the components connect.</p>
+
+        <div class="ascii-diagram">
+          <pre>
+                        +------------------------------------------+
+                        |         CLIENT (Browser / APK)            |
+                        |                                          |
+                        |  +-------------+   +------------------+  |
+                        |  | React 18 UI |   | Web Speech API   |  |
+                        |  | TailwindCSS |   | (STT - private)  |  |
+                        |  +------+------+   +--------+---------+  |
+                        |         |                   |            |
+                        |  +------+-------------------+--------+   |
+                        |  |  SpeechSynthesis (TTS - private)  |   |
+                        |  +----------------+------------------+   |
+                        +-------------------|----------------------+
+                                            |
+                              HTTP / SSE    |    (LAN: 192.168.1.15:3001)
+                                            |
+                        +-------------------|----------------------+
+                        |         NEXT.JS 14 SERVER                |
+                        |                   |                      |
+                        |  +----------------v-----------------+    |
+                        |  |         API Routes (21)          |    |
+                        |  |  /api/chat  /api/stream  /api/*  |    |
+                        |  +----------------+-----------------+    |
+                        |                   |                      |
+                        |  +----------------v-----------------+    |
+                        |  |     Tool Executor (Registry)     |    |
+                        |  |       26 Built-in Tools          |    |
+                        |  |    + Custom Skills Engine        |    |
+                        |  +-----+--------+--------+----------+    |
+                        |        |        |        |               |
+                        |  +-----v--+ +---v----+ +-v-----------+   |
+                        |  | PII    | | Cache  | | Rate Limit  |   |
+                        |  | Filter | | Layer  | | Middleware   |   |
+                        |  +-----+--+ +---+----+ +-------------+   |
+                        |        |        |                        |
+                        +--------|--------|------------------------+
+                                 |        |
+                  +--------------+--------+-----------------+
+                  |              |        |                  |
+          +-------v------+ +----v----+ +-v----------+ +-----v--------+
+          |   Euri API   | | DuckDuck| | OpenWeather| | Google Maps  |
+          |   (LLM)      | | Go      | | Map API    | | (optional)   |
+          |              | | (Search)| | (Weather)  | | (Traffic/    |
+          | PII-redacted | | No key  | | City only  | |  Nearby)     |
+          +--------------+ +---------+ +------------+ +--------------+
+
+                        +------------------------------------------+
+                        |            SQLite DATABASE                |
+                        |                                          |
+                        |  18 Tables  |  7 Migration Phases        |
+                        |  Local-first | All data on home server   |
+                        |                                          |
+                        |  memories, tasks, calendar, grocery,     |
+                        |  reminders, meals, chores, activities,   |
+                        |  skills, family, settings, budget,       |
+                        |  conversations, usage, notifications ... |
+                        +------------------------------------------+
+          </pre>
+        </div>
+
+        <h3 style="margin-top: 28px;">Data Flow Summary</h3>
+        <ul class="feature-list">
+          <li><strong>Voice input</strong> is processed by Web Speech API entirely in the browser. Transcribed text is sent to the server over LAN.</li>
+          <li><strong>Chat messages</strong> are sent to the Next.js server, which invokes tools as needed, then calls the Euri API for LLM responses.</li>
+          <li><strong>PII filtering</strong> strips sensitive data before any external API call. Only the minimum required data is sent externally.</li>
+          <li><strong>Tool results</strong> are stored in the local SQLite database. The offline-first approach intercepts 30-40% of queries with zero API tokens.</li>
+          <li><strong>Streaming responses</strong> use Server-Sent Events (SSE) so tokens appear in the UI in real-time as the LLM generates them.</li>
+          <li><strong>Caching</strong> reduces external API calls: weather (30 min), traffic (15 min), deals (2 hrs), geocoding (persistent), responses (5 min TTL).</li>
+          <li><strong>Voice output</strong> uses browser SpeechSynthesis -- the response text never leaves the device for TTS processing.</li>
+        </ul>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ═══════════════════ FOOTER ═══════════════════ -->
+  <footer class="footer">
+    <div class="container">
+      <p>Vinegar Home Assistant &middot; Documentation v1.0 &middot; Last updated 2026-02-20</p>
+      <p><a href="/">Back to App</a></p>
+    </div>
+  </footer>
+
+  <!-- ═══════════════════ JavaScript ═══════════════════ -->
+  <script>
+    // Expand all tool cards with keyboard shortcut (Ctrl+Shift+E)
+    document.addEventListener('keydown', function(e) {
+      if (e.ctrlKey && e.shiftKey && e.key === 'E') {
+        var cards = document.querySelectorAll('.tool-card');
+        var allOpen = Array.from(cards).every(function(c) { return c.classList.contains('open'); });
+        cards.forEach(function(card) {
+          if (allOpen) {
+            card.classList.remove('open');
+          } else {
+            card.classList.add('open');
+          }
+        });
+      }
+    });
+
+    // Smooth scroll offset for fixed-like elements
+    document.querySelectorAll('a[href^="#"]').forEach(function(anchor) {
+      anchor.addEventListener('click', function(e) {
+        e.preventDefault();
+        var target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          var offset = 20;
+          var top = target.getBoundingClientRect().top + window.pageYOffset - offset;
+          window.scrollTo({ top: top, behavior: 'smooth' });
+        }
+      });
+    });
+  </script>
+
+</body>
+</html>

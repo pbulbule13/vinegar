@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
+import { sanitizeForExternal } from "@/lib/pii-redactor";
 
 /**
- * TTS endpoint - converts text to speech audio
- * Uses Google TTS with proper chunking for long text
+ * TTS endpoint - FALLBACK ONLY. Primary TTS is client-side SpeechSynthesis.
+ * Used when browser has no voices (e.g., some Android WebViews).
+ * PII is redacted before sending to Google Translate TTS.
  */
 export async function POST(request: Request) {
   try {
-    const { text } = await request.json();
+    const { text, lang = "en", speed = 1 } = await request.json();
     if (!text || typeof text !== "string") {
       return NextResponse.json({ error: "text required" }, { status: 400 });
     }
@@ -28,35 +30,48 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No speakable text" }, { status: 400 });
     }
 
+    // Strip PII entirely before sending to external TTS service (privacy protection)
+    cleanText = sanitizeForExternal(cleanText);
+
+    // Validate language parameter (only safe values)
+    const validLangs = ["en", "hi", "mr", "en-IN", "hi-IN", "mr-IN"];
+    const ttsLang = validLangs.includes(lang) ? lang.split("-")[0] : "en";
+    const ttsSpeed = Math.max(0.5, Math.min(2.0, Number(speed) || 1));
+
     // Split into chunks of ~190 chars at sentence boundaries
     const chunks = splitIntoChunks(cleanText, 190);
 
-    // Fetch audio for each chunk
-    const audioBuffers: ArrayBuffer[] = [];
-    for (const chunk of chunks) {
-      const encoded = encodeURIComponent(chunk);
-      const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q=${encoded}&ttsspeed=1`;
+    // Fetch audio for all chunks in parallel (reduces latency from N*avg to ~1*avg)
+    const chunkResults = await Promise.allSettled(
+      chunks.map(async (chunk, index) => {
+        const encoded = encodeURIComponent(chunk);
+        const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${ttsLang}&client=tw-ob&q=${encoded}&ttsspeed=${ttsSpeed}`;
+        const controller = new AbortController();
+        const chunkTimeout = setTimeout(() => controller.abort(), 5000);
+        try {
+          const response = await fetch(url, {
+            signal: controller.signal,
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              "Referer": "https://translate.google.com/",
+            },
+          });
+          clearTimeout(chunkTimeout);
+          if (!response.ok) return { index, buffer: null };
+          return { index, buffer: await response.arrayBuffer() };
+        } catch {
+          clearTimeout(chunkTimeout);
+          return { index, buffer: null };
+        }
+      })
+    );
 
-      const controller = new AbortController();
-      const chunkTimeout = setTimeout(() => controller.abort(), 5000);
-      try {
-        const response = await fetch(url, {
-          signal: controller.signal,
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Referer": "https://translate.google.com/",
-          },
-        });
-        clearTimeout(chunkTimeout);
-
-        if (!response.ok) continue;
-
-        audioBuffers.push(await response.arrayBuffer());
-      } catch {
-        clearTimeout(chunkTimeout);
-        continue; // Skip timed-out or failed chunks
-      }
-    }
+    // Collect successful results in original order
+    const audioBuffers: ArrayBuffer[] = chunkResults
+      .map(r => r.status === 'fulfilled' ? r.value : null)
+      .filter((r): r is { index: number; buffer: ArrayBuffer } => r !== null && r.buffer !== null)
+      .sort((a, b) => a.index - b.index)
+      .map(r => r.buffer);
 
     if (audioBuffers.length === 0) {
       return NextResponse.json({ error: "TTS generation failed" }, { status: 500 });

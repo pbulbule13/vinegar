@@ -6,6 +6,7 @@
  */
 
 import { registerTool } from './tool-executor';
+import { sanitizeForExternal } from './pii-redactor';
 
 const REQUEST_TIMEOUT_MS = 10000;
 const MAX_RESULTS = 5;
@@ -109,13 +110,17 @@ registerTool('web_search', 'Search the web for information. Use for current even
     return { success: false, error: 'Search query required' };
   }
 
-  const searchQuery = query.trim();
+  // Strip PII before sending to external search engine (privacy)
+  const searchQuery = sanitizeForExternal(query.trim());
+  if (!searchQuery) {
+    return { success: false, error: 'Search query was empty after privacy sanitization. Try rephrasing without personal details.' };
+  }
 
-  // Try instant answer first (fast, structured)
-  const instant = await queryInstantAnswer(searchQuery);
-
-  // Also get web results for more context
-  const webResults = await searchDuckDuckGo(searchQuery);
+  // Run instant answer + web results in parallel (independent requests)
+  const [instant, webResults] = await Promise.all([
+    queryInstantAnswer(searchQuery),
+    searchDuckDuckGo(searchQuery),
+  ]);
 
   if (!instant && webResults.length === 0) {
     return {

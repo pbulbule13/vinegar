@@ -109,9 +109,10 @@ function checkGroceryAfterMealPlan(): void {
 function checkPendingChores(): void {
   try {
     const pendingChores = db.prepare(`
-      SELECT c.title, f.name as assigned_to FROM chores c
-      LEFT JOIN family_members f ON c.assigned_to = f.id
-      WHERE c.status = 'pending' AND c.created_at < unixepoch() - 86400
+      SELECT t.title, f.name as assigned_to FROM tasks t
+      LEFT JOIN family_members f ON t.assigned_to = f.id
+      WHERE t.category = 'chore' AND t.status = 'pending'
+        AND t.created_at < unixepoch() - 86400
       LIMIT 3
     `).all() as Array<{ title: string; assigned_to: string }>;
 

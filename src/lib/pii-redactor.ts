@@ -137,6 +137,29 @@ export function clearSession(): void {
   };
 }
 
+/**
+ * Sanitize text for external API calls (search engines, maps, etc.)
+ * Unlike redact() which tokenizes for round-trip, this STRIPS PII entirely.
+ * Lossy but private - use for DuckDuckGo, Google Maps, etc.
+ */
+export function sanitizeForExternal(text: string): string {
+  refreshFamilyNames();
+  let clean = text;
+
+  // Strip family names
+  for (const name of sessionCache.familyNames) {
+    clean = clean.replace(new RegExp(`\\b${escapeRegex(name)}\\b`, 'gi'), '');
+  }
+
+  // Strip standard PII patterns (SSN, CC, email, phone, address)
+  for (const pattern of PII_PATTERNS) {
+    clean = clean.replace(pattern.regex, '');
+  }
+
+  // Collapse whitespace and trim
+  return clean.replace(/\s+/g, ' ').trim();
+}
+
 // ─── Helpers ───
 
 function escapeRegex(str: string): string {

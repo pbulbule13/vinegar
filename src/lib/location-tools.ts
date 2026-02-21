@@ -6,6 +6,7 @@
 
 import { registerTool } from './tool-executor';
 import { getSetting, setSetting } from './db';
+import { sanitizeForExternal } from './pii-redactor';
 
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 const GEOCODE_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours (locations don't change often)
@@ -223,7 +224,8 @@ registerTool('find_nearby', 'Find restaurants, stores, or places nearby. Use for
     return { success: false, error: `Could not find location: "${searchNear}". Try a more specific address.` };
   }
 
-  const searchQuery = [query, type].filter(Boolean).join(' ');
+  const rawQuery = [query, type].filter(Boolean).join(' ');
+  const searchQuery = sanitizeForExternal(rawQuery) || rawQuery; // Strip PII from search query
   const radiusMeters = Math.min(Math.max(1, radius_miles), 30) * 1609; // miles to meters, cap at 30mi
 
   const cacheKey = `nearby:${searchQuery.toLowerCase()}:${coords.lat},${coords.lng}:${radiusMeters}`;

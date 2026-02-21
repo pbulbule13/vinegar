@@ -384,6 +384,32 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 8,
+    description: 'Phase 9: TTS/voice settings defaults + family_members.is_active column',
+    up: (db) => {
+      // TTS/voice settings defaults
+      const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      insertSetting.run('tts_language', 'en-US');
+      insertSetting.run('tts_speed', '1.2');
+      insertSetting.run('tts_pitch', '1.0');
+      insertSetting.run('tts_voice', '');
+      insertSetting.run('stt_language', 'en-US');
+      insertSetting.run('weather_city', '');
+
+      // Add is_active column to family_members (referenced in code but missing from schema)
+      const hasColumn = db.prepare(
+        "SELECT COUNT(*) as c FROM pragma_table_info('family_members') WHERE name='is_active'"
+      ).get() as { c: number };
+      if (hasColumn.c === 0) {
+        db.exec('ALTER TABLE family_members ADD COLUMN is_active INTEGER DEFAULT 0');
+        // Set the first parent as active by default
+        db.prepare(
+          "UPDATE family_members SET is_active = 1 WHERE id = (SELECT id FROM family_members WHERE role = 'parent' LIMIT 1)"
+        ).run();
+      }
+    },
+  },
 ];
 
 export function runMigrations(): void {

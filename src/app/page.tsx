@@ -10,6 +10,7 @@ import {
   LayoutDashboard, Settings, Volume2, WifiOff, Bell,
 } from "lucide-react";
 import { useNotifications } from "@/hooks/useNotifications";
+import { useClientTTS } from "@/hooks/useClientTTS";
 import { SettingsModal } from "@/components/settings-modal";
 import Link from "next/link";
 
@@ -66,10 +67,19 @@ export default function VinegarHome() {
   // Real-time notifications (reminders + suggestions)
   const { notifications, unreadCount, dismiss, dismissAll } = useNotifications();
 
-  // Check if voice key is available
+  // Client-side TTS (privacy: no data sent to external servers)
+  const clientTTS = useClientTTS();
+
+  // STT language (loaded from settings, linked to TTS language)
+  const [sttLanguage, setSttLanguage] = useState("en-US");
+
+  // Check if voice key is available + load STT language
   useEffect(() => {
     fetch("/api/settings").then(r => r.json()).then(data => {
       setHasVoiceKey(data.keySource !== "none");
+    }).catch(() => {});
+    fetch("/api/settings/tts").then(r => r.json()).then(data => {
+      if (data.stt_language) setSttLanguage(data.stt_language);
     }).catch(() => {});
   }, []);
 
@@ -130,9 +140,11 @@ export default function VinegarHome() {
     ...voiceCallbacks,
   });
 
-  // Browser-native voice (free - uses Web Speech API + Euri)
+  // Browser-native voice (free - uses Web Speech API + client-side TTS)
   const browserVoice = useBrowserVoice({
     model: selectedModel,
+    sttLanguage,
+    onSpeak: (text: string) => clientTTS.speak(text),
     ...voiceCallbacks,
   });
 
@@ -182,21 +194,9 @@ export default function VinegarHome() {
     }
   };
 
-  // Speak any text response via TTS
-  const speakText = async (text: string) => {
-    try {
-      const res = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
-      if (!res.ok) return;
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      audio.onended = () => URL.revokeObjectURL(url);
-      audio.play().catch(() => {});
-    } catch {}
+  // Speak any text response via client-side TTS (private, no external calls)
+  const speakText = (text: string) => {
+    clientTTS.speak(text);
   };
 
   // Text chat with streaming SSE + offline-first approach

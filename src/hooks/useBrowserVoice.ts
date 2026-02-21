@@ -26,7 +26,9 @@ interface UseBrowserVoiceOptions {
   onTranscript?: (text: string, isFinal: boolean) => void;
   onAIResponse?: (text: string) => void;
   onError?: (error: string) => void;
+  onSpeak?: (text: string) => void; // External TTS callback (uses client-side SpeechSynthesis)
   model?: string;
+  sttLanguage?: string; // "en-US" | "hi-IN" | "mr-IN" etc.
 }
 
 interface UseBrowserVoiceReturn {
@@ -51,7 +53,7 @@ function getSpeechRecognition(): (new () => SpeechRecognitionInstance) | null {
 }
 
 export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowserVoiceReturn {
-  const { onTranscript, onAIResponse, onError, model = "gemini-2.5-flash" } = options;
+  const { onTranscript, onAIResponse, onError, onSpeak, model = "gemini-2.5-flash", sttLanguage = "en-US" } = options;
 
   const [isConnected, setIsConnected] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -65,70 +67,49 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const chatHistoryRef = useRef<{ role: "user" | "assistant"; content: string }[]>([]);
   const isProcessingRef = useRef(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const ttsDurationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const echoGapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Speak text using server-side TTS endpoint
-  const speak = useCallback(async (text: string) => {
-    try {
-      // Stop any current playback
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
+  // Speak text using client-side TTS (via onSpeak callback from parent)
+  // No external server calls - completely private
+  const speak = useCallback((text: string) => {
+    // Clear any previous speech estimation timers (prevent leaks)
+    if (ttsDurationTimerRef.current) clearTimeout(ttsDurationTimerRef.current);
+    if (echoGapTimerRef.current) clearTimeout(echoGapTimerRef.current);
 
-      isSpeakingRef.current = true;
-      setIsSpeaking(true);
+    isSpeakingRef.current = true;
+    setIsSpeaking(true);
 
-      // Call our TTS endpoint
-      const res = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
-
-      if (!res.ok) throw new Error("TTS failed");
-
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      audioRef.current = audio;
-
-      audio.onended = () => {
+    if (onSpeak) {
+      // Use client-side TTS via parent callback
+      onSpeak(text);
+      // The parent's TTS will handle speaking; we use a timeout to auto-restart listening
+      // since we don't get a direct onEnd callback here
+      const estimatedDuration = Math.max(2000, (text.length / 15) * 1000 / 1.2);
+      ttsDurationTimerRef.current = setTimeout(() => {
+        ttsDurationTimerRef.current = null;
         isSpeakingRef.current = false;
         setIsSpeaking(false);
-        URL.revokeObjectURL(url);
-        audioRef.current = null;
-        // Auto-restart listening after speaking
+        // Auto-restart listening after speaking (with echo cancellation delay)
         if (recognitionRef.current && isConnectedRef.current) {
-          setTimeout(() => {
-            try {
-              recognitionRef.current?.start();
-              setIsListening(true);
-            } catch {}
-          }, 300);
+          echoGapTimerRef.current = setTimeout(() => {
+            echoGapTimerRef.current = null;
+            try { recognitionRef.current?.start(); setIsListening(true); } catch {}
+          }, 400); // 400ms echo cancellation gap
         }
-      };
-
-      audio.onerror = () => {
-        isSpeakingRef.current = false;
-        setIsSpeaking(false);
-        URL.revokeObjectURL(url);
-        audioRef.current = null;
-      };
-
-      await audio.play();
-    } catch (err) {
-      // TTS error - non-fatal, continue to restart listening
+      }, estimatedDuration);
+    } else {
+      // No TTS available, just reset state
       isSpeakingRef.current = false;
       setIsSpeaking(false);
-      // Still restart listening even if TTS fails
       if (recognitionRef.current && isConnectedRef.current) {
-        setTimeout(() => {
+        echoGapTimerRef.current = setTimeout(() => {
+          echoGapTimerRef.current = null;
           try { recognitionRef.current?.start(); setIsListening(true); } catch {}
         }, 300);
       }
     }
-  }, []);
+  }, [onSpeak]);
 
   const processWithLLM = useCallback(async (text: string) => {
     if (isProcessingRef.current) return;
@@ -212,7 +193,7 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
     const recognition = new SpeechRecognitionAPI();
     recognition.continuous = false;
     recognition.interimResults = true;
-    recognition.lang = "en-US";
+    recognition.lang = sttLanguage;
     recognition.maxAlternatives = 1;
 
     recognition.onresult = (event) => {
@@ -281,10 +262,8 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
   const disconnect = useCallback(() => {
     isConnectedRef.current = false;
     isSpeakingRef.current = false;
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
+    if (ttsDurationTimerRef.current) { clearTimeout(ttsDurationTimerRef.current); ttsDurationTimerRef.current = null; }
+    if (echoGapTimerRef.current) { clearTimeout(echoGapTimerRef.current); echoGapTimerRef.current = null; }
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch {}
       recognitionRef.current = null;
@@ -312,10 +291,8 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch {}
     }
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
+    if (ttsDurationTimerRef.current) { clearTimeout(ttsDurationTimerRef.current); ttsDurationTimerRef.current = null; }
+    if (echoGapTimerRef.current) { clearTimeout(echoGapTimerRef.current); echoGapTimerRef.current = null; }
     isSpeakingRef.current = false;
     setIsListening(false);
     setIsSpeaking(false);
@@ -327,10 +304,8 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
       isProcessingRef.current = false;
       isSpeakingRef.current = false;
       chatHistoryRef.current = [];
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
+      if (ttsDurationTimerRef.current) clearTimeout(ttsDurationTimerRef.current);
+      if (echoGapTimerRef.current) clearTimeout(echoGapTimerRef.current);
       if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch {}
         recognitionRef.current = null;

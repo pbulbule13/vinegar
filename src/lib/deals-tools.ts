@@ -7,6 +7,7 @@
 import { registerTool } from './tool-executor';
 import { searchDuckDuckGo } from './search-tools';
 import { getSetting } from './db';
+import { sanitizeForExternal } from './pii-redactor';
 
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours (deals don't change frequently)
 
@@ -55,18 +56,19 @@ registerTool('check_deals', 'Check grocery store deals and offers. Use for "deal
   if (zip) queryParts.push(zip);
   queryParts.push('2026');
 
-  const searchQuery = queryParts.join(' ');
-
   const cacheKey = `deals:${(store || '').toLowerCase()}:${(item || '').toLowerCase()}:${zip}`;
   const cached = getCached(cacheKey);
   if (cached) return { success: true, data: cached };
+
+  // Strip PII before sending to external search (privacy) - only when cache misses
+  const searchQuery = sanitizeForExternal(queryParts.join(' '));
 
   try {
     const results = await searchDuckDuckGo(searchQuery);
 
     if (results.length === 0) {
       // Try a simpler query
-      const simpleQuery = `${item || ''} ${store || ''} deals this week`.trim();
+      const simpleQuery = sanitizeForExternal(`${item || ''} ${store || ''} deals this week`.trim());
       const retryResults = await searchDuckDuckGo(simpleQuery);
       if (retryResults.length === 0) {
         return {
