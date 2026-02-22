@@ -5,8 +5,8 @@ echo   Vinegar Home Assistant - Server Launcher
 echo ============================================
 echo.
 
-:: Use port 3001 to avoid conflicts with other services (React, Express, etc. commonly use 3000)
-set PORT=3001
+:: Use port 3000 (matches the APK's configured server URL)
+set PORT=3000
 
 :: Check and kill any process already using our port
 echo [1/4] Checking for port conflicts...

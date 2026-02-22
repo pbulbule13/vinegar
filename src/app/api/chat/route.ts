@@ -31,11 +31,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const { messages, model } = parsed.data;
+    const { messages, model, language } = parsed.data;
 
     // Check offline commands first - saves tokens for simple queries
     const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
-    const offlineResult = tryOfflineResponse(lastUserMsg);
+    const offlineResult = tryOfflineResponse(lastUserMsg, language as import("@/types/language").SupportedLanguage);
     if (offlineResult) {
       // Log offline interaction (zero tokens)
       logConversation({ role: 'user', content: lastUserMsg, source: 'offline' });
@@ -54,6 +54,7 @@ export async function POST(request: Request) {
         model: model || DEFAULT_MODEL,
         apiKey,
         enableTools: true,
+        language,
       }
     );
 

@@ -215,6 +215,19 @@ registerTool('set_reminder', 'Create a reminder or alarm', (args) => {
 });
 
 registerTool('get_family', 'List all family members', () => {
-  const members = db.prepare('SELECT id, name, role, age, birthday FROM family_members ORDER BY role, name').all();
-  return { success: true, data: { members } };
+  const members = db.prepare('SELECT id, name, role, age, birthday, voice_profile, is_active FROM family_members ORDER BY role, name').all() as Record<string, unknown>[];
+  return {
+    success: true,
+    data: {
+      members: members.map(m => ({
+        id: m.id,
+        name: m.name,
+        role: m.role,
+        age: m.age,
+        birthday: m.birthday,
+        voiceEnrolled: !!m.voice_profile,
+        isActive: !!m.is_active,
+      })),
+    },
+  };
 });

@@ -6,7 +6,7 @@
 
 import { cookies } from "next/headers";
 import { chatRequestSchema } from "@/lib/validators";
-import { VINEGAR_SYSTEM_PROMPT } from "@/lib/vinegar-context";
+import { VINEGAR_SYSTEM_PROMPT, getLanguagePrompt } from "@/lib/vinegar-context";
 import { redact, rehydrate } from "@/lib/pii-redactor";
 import { checkDailyBudget, selectModel } from "@/lib/token-budget";
 import { logConversation } from "@/lib/conversation-logger";
@@ -24,7 +24,7 @@ function getToolInstructions(): string {
   return `
 TOOLS: Call tools via \`\`\`tool_call\n{"name":"TOOL","arguments":{...}}\n\`\`\` format. One tool per call. ALWAYS use tools for actions.
 
-Tools: manage_grocery({action,item,quantity,unit,category}), create_event({title,start_time,end_time,description,location,reminder_minutes}), get_calendar({start,end}), update_event({id,title,start_time,end_time}), delete_event({id}), set_reminder({message,time,type,target_member}), manage_task({action,title,priority,status,due_date}), manage_chore({action,title,assigned_to,points}), manage_meals({action,date,meal_type,recipe,ingredients[]}), manage_activity({action,title,child_name,day_of_week[],start_time,end_time,location}), save_memory({topic,content,type,importance}), recall_memory({query,type}), manage_skill({action,name,type,trigger_phrases[],url}), get_family({}), get_usage({period}), get_weather({location}), get_forecast({location,days}), web_search({query}), get_briefing({}), run_workflow({steps:[{tool,args}]}), find_free_time({duration_minutes,preferred_time}), suggest_recipe({dietary_restrictions,cuisine,meal_type,servings}), manage_budget({action,name,amount,category,type,frequency,due_date}), get_traffic({from,to}), find_nearby({query,type,near,radius_miles}), check_deals({store,item,zip_code})
+Tools: manage_grocery({action,item,quantity,unit,category}), create_event({title,start_time,end_time,description,location,reminder_minutes}), get_calendar({start,end}), update_event({id,title,start_time,end_time}), delete_event({id}), set_reminder({message,time,type,target_member}), manage_task({action,title,priority,status,due_date}), manage_chore({action,title,assigned_to,points}), manage_meals({action,date,meal_type,recipe,ingredients[]}), manage_activity({action,title,child_name,day_of_week[],start_time,end_time,location}), save_memory({topic,content,type,importance}), recall_memory({query,type}), manage_skill({action,name,type,trigger_phrases[],url}), get_family({}), get_usage({period}), get_weather({location}), get_forecast({location,days}), web_search({query}), get_briefing({}), run_workflow({steps:[{tool,args}]}), find_free_time({duration_minutes,preferred_time}), suggest_recipe({dietary_restrictions,cuisine,meal_type,servings}), manage_budget({action,name,amount,category,type,frequency,due_date}), get_traffic({from,to}), find_nearby({query,type,near,radius_miles}), check_deals({store,item,zip_code}), show_visual({query,card_type})
 `;
 }
 
@@ -68,11 +68,11 @@ export async function POST(request: Request) {
       return new Response(JSON.stringify({ error: "Invalid request" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
 
-    const { messages, model: requestedModel } = parsed.data;
+    const { messages, model: requestedModel, language } = parsed.data;
     const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
 
     // Check offline commands first - saves tokens
-    const offlineResult = tryOfflineResponse(lastUserMsg);
+    const offlineResult = tryOfflineResponse(lastUserMsg, language as import("@/types/language").SupportedLanguage);
     if (offlineResult) {
       logConversation({ role: 'user', content: lastUserMsg, source: 'offline' });
       logConversation({ role: 'assistant', content: offlineResult.response, source: 'offline', tokensIn: 0, tokensOut: 0 });
@@ -92,7 +92,8 @@ export async function POST(request: Request) {
     const model = selectModel(lastUserMsg, requestedModel || 'gemini-2.5-flash');
     const memoryContext = buildMemoryContext(lastUserMsg);
     const toolInstructions = getToolInstructions();
-    const systemPrompt = `${VINEGAR_SYSTEM_PROMPT}${toolInstructions}${memoryContext}`;
+    const languagePrompt = language ? getLanguagePrompt(language) : '';
+    const systemPrompt = `${VINEGAR_SYSTEM_PROMPT}${languagePrompt}${toolInstructions}${memoryContext}`;
 
     const apiMessages = [
       { role: 'system', content: systemPrompt },

@@ -39,6 +39,7 @@ export const chatMessageSchema = z.object({
 export const chatRequestSchema = z.object({
   messages: z.array(chatMessageSchema).min(1).max(50),
   model: z.string().max(100).optional(),
+  language: z.string().max(10).optional(), // "en-US" | "hi-IN" | "mr-IN" etc.
 });
 
 // ─── Family Routes ───
@@ -184,4 +185,15 @@ export const choreSchema = z.object({
   points: z.number().int().min(0).max(100).optional(),
   recurring: z.string().max(100).optional(),
   id: z.string().optional(),
+});
+
+// ─── Image Search Routes ───
+
+export const imageSearchSchema = z.object({
+  query: z.string().min(1).max(200),
+  child_safe: z.boolean().default(false),
+});
+
+export const imageProxySchema = z.object({
+  url: z.string().min(1).max(2000).url(),
 });

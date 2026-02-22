@@ -38,6 +38,8 @@ const config: Config = {
       animation: {
         'glow-pulse': 'glowPulse 2s ease-in-out infinite',
         'listening-pulse': 'listeningPulse 1.5s ease-in-out infinite',
+        'fadeIn': 'fadeIn 200ms ease-out',
+        'fadeSlideIn': 'fadeSlideIn 200ms ease-out',
       },
       keyframes: {
         glowPulse: {
@@ -47,6 +49,14 @@ const config: Config = {
         listeningPulse: {
           '0%, 100%': { transform: 'scale(1)', opacity: '0.6' },
           '50%': { transform: 'scale(1.08)', opacity: '1' },
+        },
+        fadeIn: {
+          from: { opacity: '0' },
+          to: { opacity: '1' },
+        },
+        fadeSlideIn: {
+          from: { opacity: '0', transform: 'translateY(8px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
         },
       },
     },

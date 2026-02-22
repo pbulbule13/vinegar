@@ -4,7 +4,7 @@
  * All tool calls go through executeTool().
  */
 
-import { db, generateId } from './db';
+import { db, generateId, getSetting, setSetting } from './db';
 import { vinegarEvents } from './events';
 
 // ─── Types ───
@@ -511,6 +511,57 @@ registerTool('find_free_time', 'Find available time slots in calendar. Use when 
   };
 });
 
+// ─── Language Management Tool ───
+
+registerTool('manage_language', 'Get or set the active language for STT and TTS. Use when user says "switch to Hindi", "speak in Marathi", or "what language".',
+  (args) => {
+    const { action = 'get', language } = args as { action?: string; language?: string };
+    const VALID_LANGS = ['en-US', 'hi-IN', 'mr-IN'];
+
+    switch (action) {
+      case 'set': {
+        if (!language || !VALID_LANGS.includes(language)) {
+          return { success: false, error: `Invalid language. Supported: ${VALID_LANGS.join(', ')}` };
+        }
+        setSetting('stt_language', language);
+        setSetting('tts_language', language);
+        const names: Record<string, string> = { 'en-US': 'English', 'hi-IN': 'Hindi', 'mr-IN': 'Marathi' };
+        return { success: true, data: { language, name: names[language] }, message: `Language set to ${names[language]}` };
+      }
+      case 'get':
+      default: {
+        const current = getSetting('stt_language') || 'en-US';
+        const ttsLang = getSetting('tts_language') || 'en-US';
+        const names: Record<string, string> = { 'en-US': 'English', 'hi-IN': 'Hindi', 'mr-IN': 'Marathi', 'en-IN': 'Indian English' };
+        return {
+          success: true,
+          data: {
+            stt_language: current,
+            tts_language: ttsLang,
+            name: names[current] || current,
+            available: VALID_LANGS.map(l => ({ code: l, name: names[l] })),
+            auto_detection: true,
+          },
+        };
+      }
+    }
+  }
+);
+
+// ─── Show Visual Tool (agent-native parity for visual panel) ───
+
+registerTool('show_visual', 'Show an image or info card in the visual context panel. Use when user asks "show me", "what does X look like", or when a visual would help.',
+  async (args) => {
+    const { query, card_type = 'image-only' } = args as { query?: string; card_type?: string };
+    if (!query) return { success: false, error: 'query required' };
+    return {
+      success: true,
+      data: { query, card_type },
+      message: `Showing: ${query}`,
+    };
+  }
+);
+
 // ─── Tool Schema for LLM ───
 
 export function getToolSchemas(): Array<{ type: string; name: string; description: string; parameters: Record<string, unknown> }> {
@@ -874,6 +925,18 @@ export function getToolSchemas(): Array<{ type: string; name: string; descriptio
     },
     {
       type: 'function',
+      name: 'manage_language',
+      description: 'Get or set the active language. Use when user says "switch to Hindi", "speak in Marathi", or asks about current language.',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', description: 'get or set' },
+          language: { type: 'string', description: 'Language code: en-US, hi-IN, or mr-IN (required for set)' },
+        },
+      },
+    },
+    {
+      type: 'function',
       name: 'check_deals',
       description: 'Check grocery store deals and offers. Use when asked about deals, sales, offers, or weekly ads.',
       parameters: {
@@ -883,6 +946,19 @@ export function getToolSchemas(): Array<{ type: string; name: string; descriptio
           item: { type: 'string', description: 'Item to find deals for (chicken, milk, etc.)' },
           zip_code: { type: 'string', description: 'ZIP code (defaults to home_zip from settings)' },
         },
+      },
+    },
+    {
+      type: 'function',
+      name: 'show_visual',
+      description: 'Show an image or info card in the visual panel. Use when user says "show me", "what does X look like", or when a visual would enhance the response.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'What to show (e.g., "turmeric", "Italian restaurant")' },
+          card_type: { type: 'string', description: 'Card type: weather, place, recipe, traffic, or image-only (default)' },
+        },
+        required: ['query'],
       },
     },
   ];

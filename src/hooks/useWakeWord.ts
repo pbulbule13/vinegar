@@ -26,6 +26,7 @@ interface UseWakeWordOptions {
   onSleep?: () => void;
   continuous?: boolean;
   sleepAfterMs?: number;
+  sttLanguage?: string; // Match sticky language instead of hardcoded en-US
 }
 
 interface UseWakeWordReturn {
@@ -45,6 +46,7 @@ export function useWakeWord(options: UseWakeWordOptions = {}): UseWakeWordReturn
     onSleep,
     continuous = true,
     sleepAfterMs = 30000, // Go back to sleep after 30s of no interaction
+    sttLanguage = "en-US",
   } = options;
 
   const [isAwake, setIsAwake] = useState(false);
@@ -95,7 +97,7 @@ export function useWakeWord(options: UseWakeWordOptions = {}): UseWakeWordReturn
     const recognition = new SpeechRecognition();
     recognition.continuous = continuous;
     recognition.interimResults = true;
-    recognition.lang = "en-US";
+    recognition.lang = sttLanguage;
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       const results = event.results;
@@ -147,7 +149,7 @@ export function useWakeWord(options: UseWakeWordOptions = {}): UseWakeWordReturn
     try {
       recognition.start();
     } catch {}
-  }, [wakeWord, continuous, wake, resetSleepTimer]);
+  }, [wakeWord, continuous, wake, resetSleepTimer, sttLanguage]);
 
   const stopPassiveListening = useCallback(() => {
     setIsPassiveListening(false);

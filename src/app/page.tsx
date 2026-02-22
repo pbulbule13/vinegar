@@ -1,32 +1,24 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRealtimeVoice } from "@/hooks/useRealtimeVoice";
 import { useBrowserVoice } from "@/hooks/useBrowserVoice";
 import { useWakeWord } from "@/hooks/useWakeWord";
+import { useSpeakerIdentification } from "@/hooks/useSpeakerIdentification";
+import type { IdentificationResult } from "@/hooks/useSpeakerIdentification";
 import { tryOfflineResponse } from "@/lib/offline-commands";
-import {
-  Mic, MicOff, Power, Zap, Brain, Send, Loader2, ChevronDown,
-  LayoutDashboard, Settings, Volume2, WifiOff, Bell,
-} from "lucide-react";
+import { detectTypedLanguage } from "@/lib/language-detector";
+import type { SupportedLanguage } from "@/types/language";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useClientTTS } from "@/hooks/useClientTTS";
 import { SettingsModal } from "@/components/settings-modal";
-import Link from "next/link";
-
-const TEXT_MODELS = [
-  { group: "Google", models: [
-    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", tag: "Fast" },
-    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", tag: "Smart" },
-  ]},
-  { group: "OpenAI", models: [
-    { id: "gpt-4o-mini", name: "GPT-4o Mini", tag: "Fast" },
-  ]},
-  { group: "Meta", models: [
-    { id: "llama-4-scout-17b-16e-instruct", name: "Llama 4 Scout", tag: "Fast" },
-    { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B", tag: "Versatile" },
-  ]},
-];
+import { HeaderBar } from "@/components/header-bar";
+import { ChatColumn } from "@/components/chat-column";
+import { InputArea } from "@/components/input-area";
+import { ContextPanel } from "@/components/context-panel/context-panel";
+import { MobileContextSheet } from "@/components/context-panel/mobile-context-sheet";
+import { useVisualContext } from "@/hooks/useVisualContext";
+import { stripVisualHint } from "@/lib/visual-context-detector";
 
 interface Message {
   id: string;
@@ -43,10 +35,6 @@ function getGreeting(): string {
   if (hour < 17) return "Good afternoon";
   if (hour < 21) return "Good evening";
   return "Good night";
-}
-
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 export default function VinegarHome() {
@@ -67,11 +55,58 @@ export default function VinegarHome() {
   // Real-time notifications (reminders + suggestions)
   const { notifications, unreadCount, dismiss, dismissAll } = useNotifications();
 
-  // Client-side TTS (privacy: no data sent to external servers)
-  const clientTTS = useClientTTS();
+  // Visual context panel
+  const visualContext = useVisualContext({ debounceMs: 300 });
 
-  // STT language (loaded from settings, linked to TTS language)
-  const [sttLanguage, setSttLanguage] = useState("en-US");
+  // STT/TTS language — single source of truth
+  const [sttLanguage, setSttLanguage] = useState<SupportedLanguage>("en-US");
+  const langSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Speaker identification
+  const [identifiedSpeaker, setIdentifiedSpeaker] = useState<IdentificationResult | null>(null);
+
+  const handleSpeakerIdentified = useCallback(async (speaker: IdentificationResult | null) => {
+    setIdentifiedSpeaker(speaker);
+    if (speaker) {
+      try {
+        await fetch("/api/family", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "voice_switch", member_id: speaker.memberId }),
+        });
+      } catch {}
+    }
+  }, []);
+
+  const speakerId = useSpeakerIdentification({
+    enabled: true,
+    onSpeakerIdentified: handleSpeakerIdentified,
+  });
+
+  // Debounced settings sync when language changes (2s debounce)
+  const syncLanguageToServer = useCallback((lang: SupportedLanguage) => {
+    if (langSyncTimerRef.current) clearTimeout(langSyncTimerRef.current);
+    langSyncTimerRef.current = setTimeout(() => {
+      fetch("/api/settings/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stt_language: lang, tts_language: lang }),
+      }).catch(() => {});
+    }, 2000);
+  }, []);
+
+  const handleLanguageChange = useCallback((lang: SupportedLanguage) => {
+    setSttLanguage(lang);
+    syncLanguageToServer(lang);
+  }, [syncLanguageToServer]);
+
+  // Client-side TTS with onSpeakEnd wired to voice hook
+  const clientTTS = useClientTTS(() => {
+    if (browserVoiceRef.current?.notifySpeakEnd) {
+      browserVoiceRef.current.notifySpeakEnd();
+    }
+  });
+  const browserVoiceRef = useRef<{ notifySpeakEnd: () => void } | null>(null);
 
   // Check if voice key is available + load STT language
   useEffect(() => {
@@ -79,41 +114,42 @@ export default function VinegarHome() {
       setHasVoiceKey(data.keySource !== "none");
     }).catch(() => {});
     fetch("/api/settings/tts").then(r => r.json()).then(data => {
-      if (data.stt_language) setSttLanguage(data.stt_language);
+      if (data.stt_language) setSttLanguage(data.stt_language as SupportedLanguage);
     }).catch(() => {});
+  }, []);
+
+  // Cleanup lang sync timer
+  useEffect(() => {
+    return () => {
+      if (langSyncTimerRef.current) clearTimeout(langSyncTimerRef.current);
+    };
   }, []);
 
   // Wake word detection with full sleep/wake cycle
   const {
     isAwake,
-    isPassiveListening,
     startPassiveListening,
     stopPassiveListening,
-    wake,
-    sleep: sleepWakeWord,
   } = useWakeWord({
     wakeWord: "vinegar",
+    sttLanguage,
     onWake: () => {
-      // Auto-activate voice when wake word detected
       if (!isActive) {
         handleVoiceActivate();
       }
     },
     onSleep: () => {
-      // When sleep command detected or auto-sleep timer fires:
-      // Disconnect voice, deactivate, but keep passive listening alive
       if (isActive) {
         stopListening();
         disconnect();
         setIsActive(false);
-        // Speak goodbye before going to sleep
         speakText("Going to sleep. Say Vinegar when you need me.");
       }
     },
-    sleepAfterMs: 60000, // 60s of silence before auto-sleep
+    sleepAfterMs: 60000,
   });
 
-  // Voice callbacks - onTranscript gets (text, isFinal)
+  // Voice callbacks — with visual context detection for voice path
   const voiceCallbacks = {
     onTranscript: (text: string, isFinal: boolean) => {
       if (text.trim() && isFinal) {
@@ -121,40 +157,52 @@ export default function VinegarHome() {
           ...prev,
           { id: `user_${Date.now()}`, role: "user", text: text.trim(), timestamp: new Date(), source: "voice" },
         ]);
+        // Tier 1: Instant visual detection from voice transcript
+        visualContext.updateFromMessage(text.trim());
       }
     },
     onAIResponse: (text: string) => {
       if (text.trim()) {
+        // Tier 2: Extract [visual:] hints and strip before display
+        const cleaned = stripVisualHint(text);
+        visualContext.updateFromResponse(text);
         setMessages((prev) => [
           ...prev,
-          { id: `vinegar_${Date.now()}`, role: "vinegar", text: text.trim(), timestamp: new Date(), source: "voice" },
+          { id: `vinegar_${Date.now()}`, role: "vinegar", text: cleaned.trim(), timestamp: new Date(), source: "voice" },
         ]);
       }
     },
+    onToolResult: (toolName: string, result: { success: boolean; data?: unknown; message?: string }) => {
+      visualContext.updateFromToolResult(toolName as import("@/types/visual-context").VisualToolName, result);
+    },
   };
 
-  // OpenAI Realtime voice (premium - needs OpenAI key)
+  // OpenAI Realtime voice (premium)
   const openaiVoice = useRealtimeVoice({
     voice: "ash",
     model: "gpt-4o-mini-realtime-preview-2024-12-17",
     ...voiceCallbacks,
   });
 
-  // Browser-native voice (free - uses Web Speech API + client-side TTS)
+  // Browser-native voice (free)
   const browserVoice = useBrowserVoice({
     model: selectedModel,
     sttLanguage,
     onSpeak: (text: string) => clientTTS.speak(text),
+    onSpeakEnd: () => {},
+    onLanguageChange: handleLanguageChange,
     ...voiceCallbacks,
   });
 
-  // Use OpenAI voice if key available, otherwise browser voice
+  useEffect(() => {
+    browserVoiceRef.current = { notifySpeakEnd: browserVoice.notifySpeakEnd };
+  }, [browserVoice.notifySpeakEnd]);
+
   const voice = hasVoiceKey ? openaiVoice : browserVoice;
   const {
     isConnected,
     isListening,
     isSpeaking,
-    userTranscript,
     aiTranscript,
     connect,
     disconnect,
@@ -173,18 +221,20 @@ export default function VinegarHome() {
       stopListening();
       disconnect();
       setIsActive(false);
+      setIdentifiedSpeaker(null);
     } else {
       try {
+        await speakerId.identifyOnce();
         await connect();
         await startListening();
         setIsActive(true);
-      } catch (err) {
-        // Voice activation failed - error state will show in UI
+      } catch {
+        // Voice activation failed
       }
     }
-  }, [isActive, connect, disconnect, startListening, stopListening]);
+  }, [isActive, connect, disconnect, startListening, stopListening, speakerId]);
 
-  const toggleWakeWord = () => {
+  const toggleWakeWord = useCallback(() => {
     if (wakeWordEnabled) {
       stopPassiveListening();
       setWakeWordEnabled(false);
@@ -192,9 +242,8 @@ export default function VinegarHome() {
       startPassiveListening();
       setWakeWordEnabled(true);
     }
-  };
+  }, [wakeWordEnabled, startPassiveListening, stopPassiveListening]);
 
-  // Speak any text response via client-side TTS (private, no external calls)
   const speakText = (text: string) => {
     clientTTS.speak(text);
   };
@@ -214,8 +263,18 @@ export default function VinegarHome() {
     setMessages((prev) => [...prev, userMsg]);
     setTextInput("");
 
+    // Tier 1: Instant visual context detection from user message
+    visualContext.updateFromMessage(text);
+
+    // Detect language from typed text
+    const typedLang = detectTypedLanguage(text);
+    const chatLanguage = typedLang || sttLanguage;
+    if (typedLang && typedLang !== sttLanguage) {
+      handleLanguageChange(typedLang);
+    }
+
     // Try offline response first
-    const offlineResult = tryOfflineResponse(text);
+    const offlineResult = tryOfflineResponse(text, chatLanguage);
     if (offlineResult) {
       setMessages((prev) => [
         ...prev,
@@ -234,7 +293,7 @@ export default function VinegarHome() {
       const res = await fetch("/api/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newHistory, model: selectedModel }),
+        body: JSON.stringify({ messages: newHistory, model: selectedModel, language: chatLanguage }),
       });
 
       if (!res.ok) {
@@ -242,7 +301,6 @@ export default function VinegarHome() {
         throw new Error(data.error || "Failed to get response");
       }
 
-      // Add empty message that we'll stream into
       setMessages((prev) => [
         ...prev,
         { id: streamMsgId, role: "vinegar", text: "", timestamp: new Date(), source: "text" },
@@ -272,7 +330,6 @@ export default function VinegarHome() {
             const parsed = JSON.parse(data);
             if (parsed.content) {
               fullResponse += parsed.content;
-              // Update the streaming message in place
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === streamMsgId ? { ...m, text: fullResponse } : m
@@ -283,7 +340,6 @@ export default function VinegarHome() {
         }
       }
 
-      // Finalize
       if (!fullResponse) {
         setMessages((prev) =>
           prev.map((m) =>
@@ -292,14 +348,17 @@ export default function VinegarHome() {
         );
       }
 
-      const updatedHistory = [...newHistory, { role: "assistant" as const, content: fullResponse }];
+      // Tier 2: Check for [visual:] hints in completed response
+      visualContext.updateFromResponse(fullResponse);
+
+      // Strip [visual:] hints before storing in history
+      const cleanedResponse = stripVisualHint(fullResponse);
+      const updatedHistory = [...newHistory, { role: "assistant" as const, content: cleanedResponse }];
       setChatHistory(updatedHistory.slice(-20));
 
-      // Speak the complete response
-      if (fullResponse) speakText(fullResponse);
+      if (cleanedResponse) speakText(cleanedResponse);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Failed to connect";
-      // If we already added the streaming message, update it with error
       setMessages((prev) => {
         const hasStreamMsg = prev.some((m) => m.id === streamMsgId);
         if (hasStreamMsg) {
@@ -324,7 +383,19 @@ export default function VinegarHome() {
     }
   };
 
-  const currentTime = new Date();
+  const toggleNotifications = useCallback(() => {
+    setShowNotifications(prev => !prev);
+  }, []);
+
+  const openSettings = useCallback(() => {
+    setShowSettings(true);
+  }, []);
+
+  const toggleModelPicker = useCallback(() => {
+    setShowModelPicker(prev => !prev);
+  }, []);
+
+  const greeting = useMemo(() => getGreeting(), []);
 
   return (
     <div className="min-h-screen flex flex-col bg-[#050508] relative overflow-hidden">
@@ -335,306 +406,78 @@ export default function VinegarHome() {
         <div className="absolute top-[40%] right-[20%] w-[30%] h-[30%] rounded-full bg-cyan-500/[0.01] blur-[80px]" />
       </div>
 
-      {/* Header */}
-      <header className="relative z-10 px-4 pt-4 pb-2 sm:px-8">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="vinegar-logo w-9 h-9 rounded-xl flex items-center justify-center">
-              <span className="text-lg font-bold">V</span>
-            </div>
-            <div>
-              <h1 className="font-orbitron text-sm tracking-[0.2em] text-white/90">VINEGAR</h1>
-              <p className="text-[10px] text-white/30 font-mono tracking-wider">HOME ASSISTANT</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Wake word toggle */}
-            <button
-              onClick={toggleWakeWord}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-mono tracking-wider transition-all ${
-                wakeWordEnabled
-                  ? "bg-amber-500/15 border border-amber-500/30 text-amber-400"
-                  : "bg-white/5 border border-white/10 text-white/40"
-              }`}
-              title={wakeWordEnabled ? 'Wake word active - say "Vinegar"' : 'Enable wake word'}
-            >
-              {wakeWordEnabled ? <Volume2 className="w-3 h-3" /> : <MicOff className="w-3 h-3" />}
-              {wakeWordEnabled ? "WAKE ON" : "WAKE OFF"}
-            </button>
+      <HeaderBar
+        wakeWordEnabled={wakeWordEnabled}
+        onToggleWakeWord={toggleWakeWord}
+        showNotifications={showNotifications}
+        onToggleNotifications={toggleNotifications}
+        notifications={notifications}
+        unreadCount={unreadCount}
+        onDismiss={dismiss}
+        onDismissAll={dismissAll}
+        onOpenSettings={openSettings}
+        identifiedSpeaker={identifiedSpeaker}
+        sttLanguage={sttLanguage}
+        isConnected={isConnected}
+      />
 
-            {/* Notification bell */}
-            <button
-              onClick={() => setShowNotifications(!showNotifications)}
-              className="nav-button relative"
-              title="Notifications"
-            >
-              <Bell className="w-4 h-4" />
-              {unreadCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-amber-500 rounded-full text-[8px] font-bold text-black flex items-center justify-center">
-                  {unreadCount > 9 ? "9+" : unreadCount}
-                </span>
-              )}
-            </button>
+      {/* Main Content — split-screen layout on desktop */}
+      <main className="relative z-10 flex-1 flex flex-col lg:flex-row px-4 sm:px-8 overflow-hidden">
+        {/* Chat Column */}
+        <div className="flex-1 flex flex-col items-center min-w-0">
+          <ChatColumn
+            messages={messages}
+            aiTranscript={aiTranscript}
+            hasVoiceKey={hasVoiceKey}
+            isTyping={isTyping}
+            messagesEndRef={messagesEndRef}
+            isActive={isActive}
+            isAwake={isAwake}
+            isSpeaking={isSpeaking}
+            isListening={isListening}
+            isIdentifying={speakerId.isIdentifying}
+            wakeWordEnabled={wakeWordEnabled}
+            greeting={greeting}
+            onVoiceActivate={handleVoiceActivate}
+            identifiedSpeaker={identifiedSpeaker}
+          />
 
-            <Link href="/dashboard" className="nav-button" title="Dashboard">
-              <LayoutDashboard className="w-4 h-4" />
-            </Link>
-            <button onClick={() => setShowSettings(true)} className="nav-button" title="Settings">
-              <Settings className="w-4 h-4" />
-            </button>
-            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-white/20'}`} />
+          <div className="w-full max-w-2xl mx-auto">
+            <InputArea
+              textInput={textInput}
+              onTextInputChange={setTextInput}
+              onSend={handleSendText}
+              onKeyDown={handleKeyDown}
+              isTyping={isTyping}
+              selectedModel={selectedModel}
+              onModelChange={setSelectedModel}
+              showModelPicker={showModelPicker}
+              onToggleModelPicker={toggleModelPicker}
+              inputRef={inputRef}
+            />
           </div>
         </div>
-      </header>
 
-      {/* Notification Panel */}
-      {showNotifications && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)} />
-          <div className="fixed top-14 right-4 z-50 w-80 max-h-96 overflow-y-auto rounded-xl border border-white/10 bg-[#0a0a0f]/95 backdrop-blur-xl shadow-2xl">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
-              <span className="text-xs font-mono text-white/50 tracking-wider">NOTIFICATIONS</span>
-              {unreadCount > 0 && (
-                <button onClick={dismissAll} className="text-[10px] text-amber-400/60 hover:text-amber-400">
-                  Dismiss all
-                </button>
-              )}
-            </div>
-            {notifications.filter(n => !n.dismissed).length === 0 ? (
-              <div className="px-4 py-8 text-center text-xs text-white/20">No notifications</div>
-            ) : (
-              notifications.filter(n => !n.dismissed).map(n => (
-                <div
-                  key={n.id}
-                  className={`px-4 py-3 border-b border-white/5 hover:bg-white/5 transition-colors ${
-                    n.priority === "high" ? "border-l-2 border-l-amber-500" : ""
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1">
-                      <span className={`text-[9px] font-mono uppercase tracking-wider ${
-                        n.type === "reminder" ? "text-amber-400/60" : "text-cyan-400/60"
-                      }`}>
-                        {n.type}
-                      </span>
-                      <p className="text-xs text-white/70 mt-0.5">{n.message}</p>
-                    </div>
-                    <button
-                      onClick={() => dismiss(n.id)}
-                      className="text-white/20 hover:text-white/50 text-xs mt-0.5"
-                    >
-                      &times;
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </>
-      )}
-
-      {/* Main Content */}
-      <main className="relative z-10 flex-1 flex flex-col items-center px-4 sm:px-8">
-        <div className="w-full max-w-2xl flex-1 flex flex-col">
-
-          {/* Messages */}
-          {messages.length > 0 ? (
-            <div className="flex-1 overflow-y-auto py-4 space-y-3 scrollbar-thin">
-              {messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`message-appear flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                >
-                  <div className={`max-w-[85%] ${msg.role === "user" ? "user-bubble" : "vinegar-bubble"}`}>
-                    <p className="text-sm leading-relaxed">{msg.text}</p>
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <span className="text-[9px] text-white/20 font-mono">{formatTime(msg.timestamp)}</span>
-                      {msg.source === "offline" && (
-                        <span className="text-[9px] text-cyan-400/40 font-mono flex items-center gap-0.5">
-                          <WifiOff className="w-2.5 h-2.5" /> offline
-                        </span>
-                      )}
-                      {msg.source === "text" && msg.role === "vinegar" && (
-                        <span className="text-[9px] text-amber-400/30 font-mono flex items-center gap-0.5">
-                          <Zap className="w-2.5 h-2.5" /> AI
-                        </span>
-                      )}
-                      {msg.source === "voice" && (
-                        <span className="text-[9px] text-purple-400/30 font-mono flex items-center gap-0.5">
-                          <Mic className="w-2.5 h-2.5" /> voice
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-
-              {/* Live voice transcript - only show for OpenAI realtime (streams incrementally) */}
-              {aiTranscript && hasVoiceKey && (
-                <div className="flex justify-start message-appear">
-                  <div className="vinegar-bubble">
-                    <p className="text-sm italic text-white/60">{aiTranscript}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Typing indicator */}
-              {isTyping && (
-                <div className="flex justify-start message-appear">
-                  <div className="vinegar-bubble">
-                    <div className="flex items-center gap-2">
-                      <div className="typing-dots">
-                        <span /><span /><span />
-                      </div>
-                      <span className="text-xs text-white/30">thinking</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div ref={messagesEndRef} />
-            </div>
-          ) : (
-            /* Empty state - show orb */
-            <div className="flex-1 flex flex-col items-center justify-center gap-8">
-              {/* Central Orb */}
-              <div className="relative flex items-center justify-center">
-                {/* Outer rings */}
-                {(isActive || isAwake) && (
-                  <>
-                    <div className="orbit-ring-outer" />
-                    <div className="orbit-ring-inner" />
-                    <div className="orbit-ring-glow" />
-                  </>
-                )}
-
-                <button
-                  onClick={handleVoiceActivate}
-                  className={`vinegar-orb ${
-                    isSpeaking ? "orb-speaking" :
-                    isListening ? "orb-listening" :
-                    isAwake ? "orb-awake" :
-                    "orb-idle"
-                  }`}
-                >
-                  <div className="flex flex-col items-center gap-3">
-                    {isActive ? (
-                      <>
-                        {isSpeaking ? (
-                          <Brain className="w-10 h-10 text-amber-400" />
-                        ) : isListening ? (
-                          <Mic className="w-10 h-10 text-amber-400 animate-pulse" />
-                        ) : (
-                          <Power className="w-10 h-10 text-amber-400" />
-                        )}
-                        <span className="text-[10px] font-mono text-amber-400/80 tracking-[0.3em]">
-                          {isSpeaking ? "SPEAKING" : isListening ? "LISTENING" : "CONNECTED"}
-                        </span>
-                      </>
-                    ) : isAwake ? (
-                      <>
-                        <Mic className="w-10 h-10 text-amber-400/80" />
-                        <span className="text-[10px] font-mono text-amber-300/60 tracking-[0.3em]">AWAKE</span>
-                      </>
-                    ) : (
-                      <>
-                        <Power className="w-10 h-10 text-white/30" />
-                        <span className="text-[10px] font-mono text-white/20 tracking-[0.2em]">TAP TO START</span>
-                      </>
-                    )}
-                  </div>
-                </button>
-              </div>
-
-              {/* Welcome text */}
-              <div className="text-center space-y-2">
-                <h2 className="text-xl font-light text-white/80">
-                  {getGreeting()}
-                </h2>
-                <p className="text-sm text-white/30">
-                  {wakeWordEnabled
-                    ? 'Say "Vinegar" to activate, or tap the orb'
-                    : "Tap the orb for voice, or type below"}
-                </p>
-                {isAwake && !isActive && (
-                  <p className="text-xs text-amber-400/60 animate-pulse">
-                    Wake word detected — activating...
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Input Area */}
-          <div className="pb-4 pt-2">
-            {/* Model selector */}
-            <div className="relative mb-2">
-              <button
-                onClick={() => setShowModelPicker(!showModelPicker)}
-                className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-mono text-white/30 hover:text-amber-400/60 transition-colors"
-              >
-                <Zap className="w-2.5 h-2.5" />
-                {TEXT_MODELS.flatMap(g => g.models).find(m => m.id === selectedModel)?.name || selectedModel}
-                <ChevronDown className={`w-2.5 h-2.5 transition-transform ${showModelPicker ? 'rotate-180' : ''}`} />
-              </button>
-
-              {showModelPicker && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowModelPicker(false)} />
-                  <div className="absolute bottom-full left-0 mb-1 z-50 w-64 model-picker">
-                    {TEXT_MODELS.map((group) => (
-                      <div key={group.group}>
-                        <div className="px-3 py-1.5 text-[9px] font-mono text-white/20 uppercase tracking-[0.2em] bg-black/30">
-                          {group.group}
-                        </div>
-                        {group.models.map((model) => (
-                          <button
-                            key={model.id}
-                            onClick={() => { setSelectedModel(model.id); setShowModelPicker(false); }}
-                            className={`w-full flex items-center justify-between px-3 py-2 text-xs transition-colors ${
-                              selectedModel === model.id
-                                ? 'bg-amber-500/10 text-amber-400'
-                                : 'text-white/50 hover:bg-white/5 hover:text-white/70'
-                            }`}
-                          >
-                            <span>{model.name}</span>
-                            <span className="text-[9px] font-mono text-white/20">{model.tag}</span>
-                          </button>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Text input */}
-            <div className="input-container">
-              <input
-                ref={inputRef}
-                type="text"
-                value={textInput}
-                onChange={(e) => setTextInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask Vinegar anything..."
-                disabled={isTyping}
-                className="flex-1 bg-transparent text-sm text-white/90 placeholder-white/20 px-4 py-3 focus:outline-none disabled:opacity-40"
-              />
-              <button
-                onClick={handleSendText}
-                disabled={!textInput.trim() || isTyping}
-                className="send-button"
-              >
-                {isTyping ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
-              </button>
-            </div>
-          </div>
+        {/* Visual Context Panel — desktop sidebar */}
+        <div className="hidden lg:block w-80 xl:w-96 flex-shrink-0 sticky top-0 h-[calc(100vh-4rem)]">
+          <ContextPanel
+            context={visualContext.context}
+            isLoading={visualContext.isLoading}
+            error={visualContext.error}
+            onExampleClick={(prompt) => {
+              setTextInput(prompt);
+              inputRef.current?.focus();
+            }}
+          />
         </div>
       </main>
+
+      {/* Mobile visual context bottom sheet (< lg breakpoint) */}
+      <MobileContextSheet
+        context={visualContext.context}
+        isLoading={visualContext.isLoading}
+        error={visualContext.error}
+      />
 
       {/* Status Bar */}
       {error && (

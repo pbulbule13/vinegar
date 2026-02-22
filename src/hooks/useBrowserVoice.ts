@@ -2,6 +2,8 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { tryOfflineResponse } from "@/lib/offline-commands";
+import { detectLanguage } from "@/lib/language-detector";
+import type { SupportedLanguage, VoiceState } from "@/types/language";
 
 // Web Speech API type declarations
 interface SpeechRecognitionEvent {
@@ -26,9 +28,12 @@ interface UseBrowserVoiceOptions {
   onTranscript?: (text: string, isFinal: boolean) => void;
   onAIResponse?: (text: string) => void;
   onError?: (error: string) => void;
-  onSpeak?: (text: string) => void; // External TTS callback (uses client-side SpeechSynthesis)
+  onSpeak?: (text: string) => void;
+  onSpeakEnd?: () => void; // Direct TTS completion signal (replaces duration estimation)
+  onLanguageChange?: (lang: SupportedLanguage) => void;
+  onToolResult?: (toolName: string, result: { success: boolean; data?: unknown; message?: string }) => void;
   model?: string;
-  sttLanguage?: string; // "en-US" | "hi-IN" | "mr-IN" etc.
+  sttLanguage?: string;
 }
 
 interface UseBrowserVoiceReturn {
@@ -42,7 +47,19 @@ interface UseBrowserVoiceReturn {
   startListening: () => void;
   stopListening: () => void;
   error: string | null;
+  detectedLanguage: SupportedLanguage;
+  notifySpeakEnd: () => void; // Parent calls this when TTS finishes
 }
+
+// ─── State machine: valid transitions ───
+
+const VALID_TRANSITIONS: Record<VoiceState, VoiceState[]> = {
+  IDLE: ["LISTENING"],
+  LISTENING: ["PROCESSING", "SWITCHING_LANG", "IDLE"],
+  SWITCHING_LANG: ["LISTENING", "IDLE"],
+  PROCESSING: ["SPEAKING", "LISTENING", "IDLE"],
+  SPEAKING: ["LISTENING", "IDLE"],
+};
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getSpeechRecognition(): (new () => SpeechRecognitionInstance) | null {
@@ -53,7 +70,10 @@ function getSpeechRecognition(): (new () => SpeechRecognitionInstance) | null {
 }
 
 export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowserVoiceReturn {
-  const { onTranscript, onAIResponse, onError, onSpeak, model = "gemini-2.5-flash", sttLanguage = "en-US" } = options;
+  const {
+    onTranscript, onAIResponse, onError, onSpeak, onSpeakEnd: onSpeakEndProp,
+    onLanguageChange, onToolResult, model = "gemini-2.5-flash", sttLanguage = "en-US",
+  } = options;
 
   const [isConnected, setIsConnected] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -62,74 +82,116 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
   const [aiTranscript, setAiTranscript] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  // State machine (single ref replaces isListening/isSpeaking/isProcessing boolean refs)
+  const stateRef = useRef<VoiceState>("IDLE");
   const isConnectedRef = useRef(false);
-  const isSpeakingRef = useRef(false);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const chatHistoryRef = useRef<{ role: "user" | "assistant"; content: string }[]>([]);
-  const isProcessingRef = useRef(false);
-  const ttsDurationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const echoGapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Speak text using client-side TTS (via onSpeak callback from parent)
-  // No external server calls - completely private
-  const speak = useCallback((text: string) => {
-    // Clear any previous speech estimation timers (prevent leaks)
-    if (ttsDurationTimerRef.current) clearTimeout(ttsDurationTimerRef.current);
-    if (echoGapTimerRef.current) clearTimeout(echoGapTimerRef.current);
+  // Sticky language tracking
+  const currentLangRef = useRef<SupportedLanguage>(sttLanguage as SupportedLanguage);
+  const consecutiveMatchRef = useRef(0);
+  const pendingLangSwitchRef = useRef<SupportedLanguage | null>(null);
+  const [detectedLanguage, setDetectedLanguage] = useState<SupportedLanguage>(sttLanguage as SupportedLanguage);
 
-    isSpeakingRef.current = true;
-    setIsSpeaking(true);
+  // Keep currentLangRef in sync with prop changes
+  useEffect(() => {
+    currentLangRef.current = sttLanguage as SupportedLanguage;
+    setDetectedLanguage(sttLanguage as SupportedLanguage);
+  }, [sttLanguage]);
+
+  // ─── State transition helper ───
+
+  function transitionTo(nextState: VoiceState) {
+    const current = stateRef.current;
+    if (!VALID_TRANSITIONS[current]?.includes(nextState)) {
+      return false;
+    }
+    stateRef.current = nextState;
+
+    // Sync React state from state machine
+    setIsListening(nextState === "LISTENING");
+    setIsSpeaking(nextState === "SPEAKING");
+    return true;
+  }
+
+  // ─── Restart listening after TTS or error ───
+
+  const restartListening = useCallback(() => {
+    if (!recognitionRef.current || !isConnectedRef.current) return;
+    if (stateRef.current !== "IDLE" && stateRef.current !== "SPEAKING") return;
+
+    // Apply pending language switch in between sessions (not during active STT)
+    if (pendingLangSwitchRef.current && recognitionRef.current) {
+      recognitionRef.current.lang = pendingLangSwitchRef.current;
+      currentLangRef.current = pendingLangSwitchRef.current;
+      setDetectedLanguage(pendingLangSwitchRef.current);
+      onLanguageChange?.(pendingLangSwitchRef.current);
+      pendingLangSwitchRef.current = null;
+    }
+
+    echoGapTimerRef.current = setTimeout(() => {
+      echoGapTimerRef.current = null;
+      if (isConnectedRef.current && transitionTo("LISTENING")) {
+        try { recognitionRef.current?.start(); } catch {}
+      }
+    }, 400);
+  }, [onLanguageChange]);
+
+  // ─── TTS completion handler (called by parent via notifySpeakEnd) ───
+
+  const notifySpeakEnd = useCallback(() => {
+    if (stateRef.current !== "SPEAKING") return;
+    transitionTo("IDLE");
+    restartListening();
+  }, [restartListening]);
+
+  // ─── Speak text using client-side TTS ───
+
+  const speak = useCallback((text: string) => {
+    if (echoGapTimerRef.current) {
+      clearTimeout(echoGapTimerRef.current);
+      echoGapTimerRef.current = null;
+    }
+
+    transitionTo("SPEAKING");
 
     if (onSpeak) {
-      // Use client-side TTS via parent callback
       onSpeak(text);
-      // The parent's TTS will handle speaking; we use a timeout to auto-restart listening
-      // since we don't get a direct onEnd callback here
-      const estimatedDuration = Math.max(2000, (text.length / 15) * 1000 / 1.2);
-      ttsDurationTimerRef.current = setTimeout(() => {
-        ttsDurationTimerRef.current = null;
-        isSpeakingRef.current = false;
-        setIsSpeaking(false);
-        // Auto-restart listening after speaking (with echo cancellation delay)
-        if (recognitionRef.current && isConnectedRef.current) {
-          echoGapTimerRef.current = setTimeout(() => {
-            echoGapTimerRef.current = null;
-            try { recognitionRef.current?.start(); setIsListening(true); } catch {}
-          }, 400); // 400ms echo cancellation gap
-        }
-      }, estimatedDuration);
-    } else {
-      // No TTS available, just reset state
-      isSpeakingRef.current = false;
-      setIsSpeaking(false);
-      if (recognitionRef.current && isConnectedRef.current) {
-        echoGapTimerRef.current = setTimeout(() => {
-          echoGapTimerRef.current = null;
-          try { recognitionRef.current?.start(); setIsListening(true); } catch {}
-        }, 300);
+      // If parent provides onSpeakEnd prop, we rely on notifySpeakEnd being called.
+      // Otherwise fall back to duration estimation.
+      if (!onSpeakEndProp) {
+        const estimatedDuration = Math.max(2000, (text.length / 15) * 1000 / 1.2);
+        setTimeout(() => {
+          notifySpeakEnd();
+        }, estimatedDuration);
       }
+    } else {
+      // No TTS, immediately ready to listen again
+      transitionTo("IDLE");
+      restartListening();
     }
-  }, [onSpeak]);
+  }, [onSpeak, onSpeakEndProp, notifySpeakEnd, restartListening]);
+
+  // ─── Process transcript with LLM ───
 
   const processWithLLM = useCallback(async (text: string) => {
-    if (isProcessingRef.current) return;
-    isProcessingRef.current = true;
+    if (!transitionTo("PROCESSING")) return;
 
-    // Stop listening while processing
+    // Stop STT while processing
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch {}
     }
-    setIsListening(false);
 
-    // Check offline commands first (saves tokens + faster response)
-    const offlineResult = tryOfflineResponse(text);
+    // Check offline commands first
+    const offlineResult = tryOfflineResponse(text, currentLangRef.current);
     if (offlineResult) {
       setAiTranscript("");
       onAIResponse?.(offlineResult.response);
       chatHistoryRef.current.push({ role: "user", content: text });
       chatHistoryRef.current.push({ role: "assistant", content: offlineResult.response });
       speak(offlineResult.response);
-      isProcessingRef.current = false;
       return;
     }
 
@@ -143,6 +205,7 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
         body: JSON.stringify({
           messages: chatHistoryRef.current.slice(-10),
           model,
+          language: currentLangRef.current,
         }),
       });
 
@@ -152,6 +215,16 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
       const aiText = data.content || "I couldn't generate a response.";
       setAiTranscript("");
       onAIResponse?.(aiText);
+
+      // Notify parent about tool results for visual context
+      const visualTools = ['get_weather', 'get_forecast', 'find_nearby', 'get_traffic', 'suggest_recipe', 'show_visual'];
+      if (data.toolsUsed && Array.isArray(data.toolsUsed) && onToolResult) {
+        for (const toolName of data.toolsUsed) {
+          if (visualTools.includes(toolName)) {
+            onToolResult(toolName, { success: true, data: {}, message: aiText });
+          }
+        }
+      }
 
       chatHistoryRef.current.push({ role: "assistant", content: aiText });
       if (chatHistoryRef.current.length > 20) {
@@ -165,21 +238,18 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
         body: JSON.stringify({ role: "assistant", content: aiText, source: "voice", model }),
       }).catch(() => {});
 
-      // Speak the response via server TTS
       speak(aiText);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to get response";
       setError(msg);
       onError?.(msg);
       setAiTranscript("");
-      // Restart listening on error
-      if (recognitionRef.current && isConnectedRef.current) {
-        try { recognitionRef.current.start(); setIsListening(true); } catch {}
-      }
-    } finally {
-      isProcessingRef.current = false;
+      transitionTo("IDLE");
+      restartListening();
     }
-  }, [model, onAIResponse, onError, speak]);
+  }, [model, onAIResponse, onError, onToolResult, speak, restartListening]);
+
+  // ─── Connect: create SpeechRecognition instance ───
 
   const connect = useCallback(async () => {
     const SpeechRecognitionAPI = getSpeechRecognition();
@@ -193,7 +263,7 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
     const recognition = new SpeechRecognitionAPI();
     recognition.continuous = false;
     recognition.interimResults = true;
-    recognition.lang = sttLanguage;
+    recognition.lang = currentLangRef.current;
     recognition.maxAlternatives = 1;
 
     recognition.onresult = (event) => {
@@ -217,7 +287,25 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
       if (finalText) {
         setUserTranscript(finalText);
         onTranscript?.(finalText, true);
-        setIsListening(false);
+
+        // ── Language detection on final transcript ──
+        const detection = detectLanguage(finalText, currentLangRef.current);
+        if (detection.language !== currentLangRef.current) {
+          if (detection.confidence === "high") {
+            // High confidence: schedule switch for next session
+            consecutiveMatchRef.current = 0;
+            pendingLangSwitchRef.current = detection.language;
+          } else {
+            // Low confidence: require 2 consecutive matches before switching
+            consecutiveMatchRef.current++;
+            if (consecutiveMatchRef.current >= 2) {
+              pendingLangSwitchRef.current = detection.language;
+              consecutiveMatchRef.current = 0;
+            }
+          }
+        } else {
+          consecutiveMatchRef.current = 0;
+        }
 
         // Log user voice transcript
         fetch("/api/conversations", {
@@ -226,28 +314,40 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
           body: JSON.stringify({ role: "user", content: finalText, source: "voice" }),
         }).catch(() => {});
 
-        // Process with LLM
         processWithLLM(finalText);
       }
     };
 
     recognition.onerror = (event) => {
       if (event.error === "no-speech" || event.error === "aborted") {
-        if (isConnectedRef.current && !isSpeakingRef.current && !isProcessingRef.current) {
+        if (isConnectedRef.current && stateRef.current === "LISTENING") {
           setTimeout(() => {
-            try { recognition.start(); setIsListening(true); } catch {}
+            if (transitionTo("IDLE")) transitionTo("LISTENING");
+            try { recognition.start(); } catch {}
           }, 500);
         }
         return;
       }
       setError(`Speech error: ${event.error}`);
-      setIsListening(false);
+      transitionTo("IDLE");
     };
 
     recognition.onend = () => {
-      if (isConnectedRef.current && !isSpeakingRef.current && !isProcessingRef.current) {
+      // Apply pending language switch between STT sessions
+      if (pendingLangSwitchRef.current) {
+        recognition.lang = pendingLangSwitchRef.current;
+        currentLangRef.current = pendingLangSwitchRef.current;
+        setDetectedLanguage(pendingLangSwitchRef.current);
+        onLanguageChange?.(pendingLangSwitchRef.current);
+        pendingLangSwitchRef.current = null;
+      }
+
+      if (isConnectedRef.current && stateRef.current !== "PROCESSING" && stateRef.current !== "SPEAKING") {
         setTimeout(() => {
-          try { recognition.start(); setIsListening(true); } catch {}
+          if (stateRef.current === "IDLE" || stateRef.current === "SWITCHING_LANG") {
+            transitionTo("LISTENING");
+            try { recognition.start(); } catch {}
+          }
         }, 500);
       }
     };
@@ -255,14 +355,16 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
     recognitionRef.current = recognition;
     chatHistoryRef.current = [];
     isConnectedRef.current = true;
+    stateRef.current = "IDLE";
     setIsConnected(true);
     setError(null);
-  }, [onTranscript, onError, processWithLLM]);
+  }, [onTranscript, onError, onLanguageChange, processWithLLM]);
+
+  // ─── Disconnect ───
 
   const disconnect = useCallback(() => {
     isConnectedRef.current = false;
-    isSpeakingRef.current = false;
-    if (ttsDurationTimerRef.current) { clearTimeout(ttsDurationTimerRef.current); ttsDurationTimerRef.current = null; }
+    stateRef.current = "IDLE";
     if (echoGapTimerRef.current) { clearTimeout(echoGapTimerRef.current); echoGapTimerRef.current = null; }
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch {}
@@ -277,13 +379,13 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
   }, []);
 
   const startListening = useCallback(() => {
-    if (!recognitionRef.current) return;
-    try {
-      recognitionRef.current.start();
-      setIsListening(true);
+    if (!recognitionRef.current || stateRef.current !== "IDLE") return;
+    if (transitionTo("LISTENING")) {
       setUserTranscript("");
-    } catch {
-      setError("Failed to start listening");
+      try { recognitionRef.current.start(); } catch {
+        setError("Failed to start listening");
+        transitionTo("IDLE");
+      }
     }
   }, []);
 
@@ -291,20 +393,18 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch {}
     }
-    if (ttsDurationTimerRef.current) { clearTimeout(ttsDurationTimerRef.current); ttsDurationTimerRef.current = null; }
     if (echoGapTimerRef.current) { clearTimeout(echoGapTimerRef.current); echoGapTimerRef.current = null; }
-    isSpeakingRef.current = false;
+    stateRef.current = "IDLE";
     setIsListening(false);
     setIsSpeaking(false);
   }, []);
 
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       isConnectedRef.current = false;
-      isProcessingRef.current = false;
-      isSpeakingRef.current = false;
+      stateRef.current = "IDLE";
       chatHistoryRef.current = [];
-      if (ttsDurationTimerRef.current) clearTimeout(ttsDurationTimerRef.current);
       if (echoGapTimerRef.current) clearTimeout(echoGapTimerRef.current);
       if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch {}
@@ -316,5 +416,6 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
   return {
     isConnected, isListening, isSpeaking, userTranscript, aiTranscript,
     connect, disconnect, startListening, stopListening, error,
+    detectedLanguage, notifySpeakEnd,
   };
 }

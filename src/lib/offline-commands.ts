@@ -6,6 +6,8 @@
  * Target: intercept 30-40% of common household queries offline.
  */
 
+import type { SupportedLanguage } from "@/types/language";
+
 export interface OfflineResult {
   response: string;
   shouldSpeak: boolean;
@@ -29,14 +31,18 @@ const GREETINGS = [
   'hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening',
   'good night', 'howdy', 'sup', "what's up", 'yo', 'hola', 'namaste',
   'greetings', 'heya', 'hiya', 'what up', 'whats up', "what's good",
+  // Hindi/Marathi greetings
+  'namaskar', 'namaskaar', 'kaise ho', 'kasa aahes', 'kashi aahat',
 ];
 
-const THANKS = ['thank you', 'thanks', 'thx', 'appreciate it', 'cheers', 'thank u', 'tysm', 'ty'];
+const THANKS = ['thank you', 'thanks', 'thx', 'appreciate it', 'cheers', 'thank u', 'tysm', 'ty',
+  'dhanyavad', 'shukriya', 'dhanyavaad', 'aabhar', 'aabhaar'];
 
 const GOODBYES = [
   'bye', 'goodbye', 'see you', 'see ya', 'later', 'good night',
   'gotta go', 'talk later', 'catch you later', 'peace', 'signing off',
   'i\'m done', 'that\'s all', 'nothing else', 'no more questions',
+  'alvida', 'phir milenge', 'chalo', 'bhet u', 'yetoye',
 ];
 
 const ACKNOWLEDGMENTS = [
@@ -117,9 +123,65 @@ const HOW_ARE_YOU_RESPONSES = [
   "I'm good! What do you need?",
 ];
 
+// ─── Localized Response Banks ───
+
+const GREETING_RESPONSES_HI = [
+  () => "नमस्ते! मैं कैसे मदद कर सकता हूँ?",
+  () => "हैलो! बताइए क्या करना है?",
+  () => "नमस्ते! मैं यहाँ हूँ, बोलिए।",
+];
+
+const GREETING_RESPONSES_MR = [
+  () => "नमस्कार! मी कशी मदत करू शकतो?",
+  () => "हॅलो! सांगा काय करायचं?",
+  () => "नमस्कार! मी इथे आहे, बोला.",
+];
+
+const THANKS_RESPONSES_HI = ["कोई बात नहीं!", "खुशी हुई मदद करके!", "कभी भी!"];
+const THANKS_RESPONSES_MR = ["काही हरकत नाही!", "मदत करून आनंद झाला!", "कधीही!"];
+
+const GOODBYE_RESPONSES_HI = ["अलविदा! जब ज़रूरत हो तो बुलाइए।", "फिर मिलते हैं! ध्यान रखिए।"];
+const GOODBYE_RESPONSES_MR = ["बाय! गरज असेल तेव्हा बोलवा.", "पुन्हा भेटू! काळजी घ्या."];
+
+const HOW_ARE_YOU_RESPONSES_HI = ["मैं बढ़िया हूँ! आप बताइए, क्या मदद करूँ?", "सब अच्छा है! बोलिए क्या करना है?"];
+const HOW_ARE_YOU_RESPONSES_MR = ["मी छान आहे! सांगा, काय मदत करू?", "सगळं ठीक आहे! बोला काय हवं?"];
+
+const ACKNOWLEDGMENT_RESPONSES_HI = ["और कुछ मदद चाहिए?", "बताइए अगर और कुछ करना है।"];
+const ACKNOWLEDGMENT_RESPONSES_MR = ["अजून काही मदत हवी का?", "सांगा अजून काही करायचं असेल तर."];
+
+function getLocalizedGreeting(lang?: SupportedLanguage) {
+  if (lang === "hi-IN") return pick(GREETING_RESPONSES_HI)();
+  if (lang === "mr-IN") return pick(GREETING_RESPONSES_MR)();
+  return pick(GREETING_RESPONSES)();
+}
+
+function getLocalizedThanks(lang?: SupportedLanguage) {
+  if (lang === "hi-IN") return pick(THANKS_RESPONSES_HI);
+  if (lang === "mr-IN") return pick(THANKS_RESPONSES_MR);
+  return pick(THANKS_RESPONSES);
+}
+
+function getLocalizedGoodbye(lang?: SupportedLanguage) {
+  if (lang === "hi-IN") return pick(GOODBYE_RESPONSES_HI);
+  if (lang === "mr-IN") return pick(GOODBYE_RESPONSES_MR);
+  return pick(GOODBYE_RESPONSES);
+}
+
+function getLocalizedHowAreYou(lang?: SupportedLanguage) {
+  if (lang === "hi-IN") return pick(HOW_ARE_YOU_RESPONSES_HI);
+  if (lang === "mr-IN") return pick(HOW_ARE_YOU_RESPONSES_MR);
+  return pick(HOW_ARE_YOU_RESPONSES);
+}
+
+function getLocalizedAcknowledgment(lang?: SupportedLanguage) {
+  if (lang === "hi-IN") return pick(ACKNOWLEDGMENT_RESPONSES_HI);
+  if (lang === "mr-IN") return pick(ACKNOWLEDGMENT_RESPONSES_MR);
+  return pick(ACKNOWLEDGMENT_RESPONSES);
+}
+
 // ─── Main Handler ───
 
-export function tryOfflineResponse(input: string): OfflineResult | null {
+export function tryOfflineResponse(input: string, language?: SupportedLanguage): OfflineResult | null {
   const lower = input.toLowerCase().trim();
 
   // Very short or empty
@@ -127,27 +189,27 @@ export function tryOfflineResponse(input: string): OfflineResult | null {
 
   // ── Greetings ──
   if (GREETINGS.some(g => lower === g || lower.startsWith(g + ' ') || lower.startsWith(g + ',') || lower.startsWith(g + '!'))) {
-    return { response: pick(GREETING_RESPONSES)(), shouldSpeak: true };
+    return { response: getLocalizedGreeting(language), shouldSpeak: true };
   }
 
   // ── Thanks ──
   if (THANKS.some(t => lower === t || lower.startsWith(t + ' ') || lower.startsWith(t + ','))) {
-    return { response: pick(THANKS_RESPONSES), shouldSpeak: true };
+    return { response: getLocalizedThanks(language), shouldSpeak: true };
   }
 
   // ── Goodbyes ──
   if (GOODBYES.some(g => lower === g || lower.startsWith(g + ' ') || lower.startsWith(g + ','))) {
-    return { response: pick(GOODBYE_RESPONSES), shouldSpeak: true };
+    return { response: getLocalizedGoodbye(language), shouldSpeak: true };
   }
 
   // ── Acknowledgments ──
   if (ACKNOWLEDGMENTS.includes(lower)) {
-    return { response: pick(ACKNOWLEDGMENT_RESPONSES), shouldSpeak: true };
+    return { response: getLocalizedAcknowledgment(language), shouldSpeak: true };
   }
 
   // ── How are you ──
   if (HOW_ARE_YOU.some(q => lower === q || lower.startsWith(q))) {
-    return { response: pick(HOW_ARE_YOU_RESPONSES), shouldSpeak: true };
+    return { response: getLocalizedHowAreYou(language), shouldSpeak: true };
   }
 
   // ── Identity / About ──
@@ -161,7 +223,7 @@ export function tryOfflineResponse(input: string): OfflineResult | null {
   }
 
   // ── Time ──
-  if (/^(what('s| is) the time|what time is it|time\??|tell me the time|current time)$/i.test(lower)) {
+  if (/^(what('s| is) the time|what time is it|time( now)?\??|tell me the time|current time|time now|time please|kitna baja hai|kitne baje hain|vela kay aahe)$/i.test(lower)) {
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     return { response: `It's ${time}.`, shouldSpeak: true };
   }

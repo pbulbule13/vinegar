@@ -230,10 +230,11 @@ export function useClientTTS(onSpeakEnd?: () => void): UseClientTTSReturn {
         speakingRef.current = true;
         setIsSpeaking(true);
 
+        const lang = settingsRef.current.language;
         const res = await fetch("/api/tts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
+          body: JSON.stringify({ text, lang, speed: settingsRef.current.speed }),
         });
 
         if (!res.ok) throw new Error("TTS fallback failed");

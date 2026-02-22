@@ -12,7 +12,7 @@
 
 import { db, generateId } from './db';
 import { redact, rehydrate } from './pii-redactor';
-import { VINEGAR_SYSTEM_PROMPT, CHILD_SAFE_PROMPT } from './vinegar-context';
+import { VINEGAR_SYSTEM_PROMPT, CHILD_SAFE_PROMPT, getLanguagePrompt } from './vinegar-context';
 import { executeTool, getToolSchemas } from './tool-executor';
 import { checkDailyBudget, trimToFit, selectModel } from './token-budget';
 import { logToolUsage } from './episodes';
@@ -78,6 +78,8 @@ interface LLMOptions {
   maxTokens?: number;
   enableTools?: boolean;
   apiKey: string;
+  language?: string; // "en-US" | "hi-IN" | "mr-IN" etc.
+  activeMemberId?: string; // From speaker identification (overrides DB query)
 }
 
 interface LLMResult {
@@ -98,14 +100,22 @@ function sanitizeContext(text: string): string {
 
 // ─── Context Builder ───
 
-function buildMemoryContext(userMessage: string): string {
+function buildMemoryContext(userMessage: string, activeMemberId?: string): string {
   const sections: string[] = [];
 
   // Level 0: Family names (always injected)
   try {
-    const members = db.prepare('SELECT name, role FROM family_members').all() as { name: string; role: string }[];
+    const members = db.prepare('SELECT id, name, role FROM family_members').all() as { id: string; name: string; role: string }[];
     if (members.length > 0) {
       sections.push(`[Family] ${members.map(m => `${m.name} (${m.role})`).join(', ')}`);
+    }
+
+    // Inject active speaker context if identified
+    if (activeMemberId) {
+      const active = members.find(m => m.id === activeMemberId);
+      if (active) {
+        sections.push(`[Active Speaker] ${active.name} (${active.role})`);
+      }
     }
   } catch {}
 
@@ -255,7 +265,7 @@ function getToolInstructions(): string {
   return `
 TOOLS: Call tools via \`\`\`tool_call\n{"name":"TOOL","arguments":{...}}\n\`\`\` format. One tool per call. ALWAYS use tools for actions.
 
-Tools: manage_grocery({action,item,quantity,unit,category}), create_event({title,start_time,end_time,description,location,reminder_minutes}), get_calendar({start,end}), update_event({id,title,start_time,end_time}), delete_event({id}), set_reminder({message,time,type,target_member}), manage_task({action,title,priority,status,due_date}), manage_chore({action,title,assigned_to,points}), manage_meals({action,date,meal_type,recipe,ingredients[]}), manage_activity({action,title,child_name,day_of_week[],start_time,end_time,location}), save_memory({topic,content,type,importance}), recall_memory({query,type}), manage_skill({action,name,type,trigger_phrases[],url}), get_family({}), get_usage({period}), get_weather({location}), get_forecast({location,days}), web_search({query}), get_briefing({}), run_workflow({steps:[{tool,args}]}), find_free_time({duration_minutes,preferred_time}), suggest_recipe({dietary_restrictions,cuisine,meal_type,servings}), manage_budget({action,name,amount,category,type,frequency,due_date}), get_traffic({from,to}), find_nearby({query,type,near,radius_miles}), check_deals({store,item,zip_code})
+Tools: manage_grocery({action,item,quantity,unit,category}), create_event({title,start_time,end_time,description,location,reminder_minutes}), get_calendar({start,end}), update_event({id,title,start_time,end_time}), delete_event({id}), set_reminder({message,time,type,target_member}), manage_task({action,title,priority,status,due_date}), manage_chore({action,title,assigned_to,points}), manage_meals({action,date,meal_type,recipe,ingredients[]}), manage_activity({action,title,child_name,day_of_week[],start_time,end_time,location}), save_memory({topic,content,type,importance}), recall_memory({query,type}), manage_skill({action,name,type,trigger_phrases[],url}), get_family({}), get_usage({period}), get_weather({location}), get_forecast({location,days}), web_search({query}), get_briefing({}), run_workflow({steps:[{tool,args}]}), find_free_time({duration_minutes,preferred_time}), suggest_recipe({dietary_restrictions,cuisine,meal_type,servings}), manage_budget({action,name,amount,category,type,frequency,due_date}), get_traffic({from,to}), find_nearby({query,type,near,radius_miles}), check_deals({store,item,zip_code}), show_visual({query,card_type})
 `;
 }
 
@@ -284,7 +294,7 @@ function parseToolCall(content: string): { name: string; arguments: Record<strin
       'update_event', 'delete_event', 'set_reminder', 'manage_grocery', 'manage_meals',
       'manage_activity', 'manage_chore', 'manage_skill', 'get_family', 'get_usage',
       'get_weather', 'get_forecast', 'web_search', 'get_briefing', 'run_workflow', 'find_free_time',
-      'suggest_recipe', 'manage_budget', 'get_traffic', 'find_nearby', 'check_deals'];
+      'suggest_recipe', 'manage_budget', 'get_traffic', 'find_nearby', 'check_deals', 'show_visual'];
     if (knownTools.includes(toolName)) {
       const args: Record<string, unknown> = {};
       // Parse Python kwargs: key='value' or key="value" or key=value
@@ -318,7 +328,7 @@ export async function callLLM(
   messages: LLMMessage[],
   options: LLMOptions
 ): Promise<LLMResult> {
-  const { model: requestedModel = 'gemini-2.5-flash', temperature = 0.7, maxTokens = 2048, enableTools = true, apiKey } = options;
+  const { model: requestedModel = 'gemini-2.5-flash', temperature = 0.7, maxTokens = 2048, enableTools = true, apiKey, language, activeMemberId } = options;
 
   // 0. Check daily budget
   const budget = checkDailyBudget();
@@ -344,18 +354,28 @@ export async function callLLM(
   const model = selectModel(lastUserMsg, requestedModel);
 
   // 2. Build context
-  const memoryContext = buildMemoryContext(lastUserMsg);
+  const memoryContext = buildMemoryContext(lastUserMsg, activeMemberId);
   const toolInstructions = enableTools ? getToolInstructions() : '';
 
   // 2.5 Check if active user is a child (for content filtering)
+  // If activeMemberId is provided (from speaker ID), use it directly.
+  // Fail-closed: if speaker ID was attempted but no match, default to child-safe.
   let childSafetyAddendum = '';
   try {
-    const activeChild = db.prepare("SELECT id FROM family_members WHERE role = 'child' AND is_active = 1 LIMIT 1").get();
-    if (activeChild) childSafetyAddendum = CHILD_SAFE_PROMPT;
+    if (activeMemberId) {
+      // Speaker identified — check their role directly
+      const member = db.prepare("SELECT role FROM family_members WHERE id = ?").get(activeMemberId) as { role: string } | undefined;
+      if (member?.role === 'child') childSafetyAddendum = CHILD_SAFE_PROMPT;
+    } else {
+      // No speaker ID — fall back to DB is_active check
+      const activeChild = db.prepare("SELECT id FROM family_members WHERE role = 'child' AND is_active = 1 LIMIT 1").get();
+      if (activeChild) childSafetyAddendum = CHILD_SAFE_PROMPT;
+    }
   } catch {}
 
   // 3. Build system prompt with static content FIRST (for prompt caching)
-  const systemPrompt = `${VINEGAR_SYSTEM_PROMPT}${childSafetyAddendum}${toolInstructions}${memoryContext}`;
+  const languagePrompt = language ? getLanguagePrompt(language) : '';
+  const systemPrompt = `${VINEGAR_SYSTEM_PROMPT}${languagePrompt}${childSafetyAddendum}${toolInstructions}${memoryContext}`;
 
   // 3.5 Trim messages to fit token budget
   const { messages: trimmedMsgs } = trimToFit(systemPrompt, messages, memoryContext);
@@ -374,7 +394,7 @@ export async function callLLM(
 
   // Log user question (redact sensitive PII like SSN, CC, but keep family names for readability)
   const { redacted: redactedForLog } = redact(lastUserMsg);
-  logConversation({ role: 'user', content: redactedForLog, source: 'text' });
+  logConversation({ role: 'user', content: redactedForLog, source: 'text', familyMemberId: activeMemberId });
 
   // 5. Call API with tool loop
   const toolsUsed: string[] = [];
@@ -494,6 +514,7 @@ export async function callLLM(
     toolsUsed: toolsUsed.length > 0 ? toolsUsed : undefined,
     tokensIn: finalUsage?.prompt_tokens || 0,
     tokensOut: finalUsage?.completion_tokens || 0,
+    familyMemberId: activeMemberId,
   });
 
   const result: LLMResult = {

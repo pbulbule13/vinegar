@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Settings, X, Key, Check, AlertCircle, MessageSquare, Globe, Volume2, MapPin, Users } from "lucide-react";
+import { Settings, X, Key, Check, AlertCircle, MessageSquare, Globe, Volume2, MapPin, Users, Mic, Trash2 } from "lucide-react";
+import { VoiceEnrollment } from "@/components/voice-enrollment";
+import { useSpeakerIdentification } from "@/hooks/useSpeakerIdentification";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -56,6 +58,11 @@ export function SettingsModal({ isOpen, onClose, onTTSSettingsChange }: Settings
   const [homeZip, setHomeZip] = useState("");
   const [weatherCity, setWeatherCity] = useState("");
 
+  // Voice profiles
+  const [familyMembers, setFamilyMembers] = useState<{ id: string; name: string; role: string; voiceEnrolled: boolean }[]>([]);
+  const [enrollingMember, setEnrollingMember] = useState<{ id: string; name: string; role: string } | null>(null);
+  const speakerId = useSpeakerIdentification();
+
   // Load voices from browser
   useEffect(() => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
@@ -96,6 +103,16 @@ export function SettingsModal({ isOpen, onClose, onTTSSettingsChange }: Settings
       setHomeZip(data.home_zip || "");
       setWeatherCity(data.weather_city || "");
     }).catch(() => {});
+
+    // Family members for voice profiles
+    fetch("/api/family").then(r => r.json()).then(data => {
+      setFamilyMembers((data.members || []).map((m: Record<string, unknown>) => ({
+        id: m.id as string,
+        name: m.name as string,
+        role: m.role as string,
+        voiceEnrolled: !!m.voiceEnrolled,
+      })));
+    }).catch(() => {});
   }, [isOpen]);
 
   // Save TTS settings (debounced)
@@ -109,6 +126,31 @@ export function SettingsModal({ isOpen, onClose, onTTSSettingsChange }: Settings
       onTTSSettingsChange?.();
     } catch {}
   }, [onTTSSettingsChange]);
+
+  // Delete voice profile
+  const handleDeleteVoice = useCallback(async (memberId: string) => {
+    try {
+      await fetch("/api/family", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete_voice", member_id: memberId }),
+      });
+      setFamilyMembers(prev => prev.map(m => m.id === memberId ? { ...m, voiceEnrolled: false } : m));
+    } catch {}
+  }, []);
+
+  const handleEnrollComplete = useCallback(() => {
+    setEnrollingMember(null);
+    // Refresh family members list
+    fetch("/api/family").then(r => r.json()).then(data => {
+      setFamilyMembers((data.members || []).map((m: Record<string, unknown>) => ({
+        id: m.id as string,
+        name: m.name as string,
+        role: m.role as string,
+        voiceEnrolled: !!m.voiceEnrolled,
+      })));
+    }).catch(() => {});
+  }, []);
 
   // Save location settings
   const saveLocationSettings = useCallback(async (patch: Partial<LocationData>) => {
@@ -358,6 +400,74 @@ export function SettingsModal({ isOpen, onClose, onTTSSettingsChange }: Settings
                 </select>
               )}
             </div>
+          </div>
+
+          <div className="border-t border-[#3a3a44]/30" />
+
+          {/* ─── Voice Profiles Section ─── */}
+          <div className="space-y-3">
+            <label className="flex items-center gap-2 text-xs text-text-muted font-jetbrains tracking-wider">
+              <Users className="w-3.5 h-3.5" />
+              VOICE PROFILES
+            </label>
+
+            {enrollingMember ? (
+              <VoiceEnrollment
+                familyMember={enrollingMember}
+                onComplete={handleEnrollComplete}
+                onCancel={() => setEnrollingMember(null)}
+                enrollCapture={speakerId.enrollCapture}
+              />
+            ) : familyMembers.length === 0 ? (
+              <p className="text-[10px] text-white/30 py-2">
+                Add family members first to enable voice identification.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {familyMembers.map(member => (
+                  <div
+                    key={member.id}
+                    className="flex items-center gap-3 p-2.5 rounded-lg bg-[#1e1e24] border border-[#3a3a44]/30"
+                  >
+                    <div className={`w-2 h-2 rounded-full ${member.voiceEnrolled ? "bg-green-500" : "bg-white/20"}`} />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs text-white/70 truncate block">{member.name}</span>
+                      <span className="text-[9px] text-white/30">{member.role}</span>
+                    </div>
+                    {member.voiceEnrolled ? (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[9px] text-green-400/60">Enrolled</span>
+                        <button
+                          onClick={() => setEnrollingMember(member)}
+                          className="px-2 py-1 text-[9px] text-amber-400/60 hover:text-amber-400 hover:bg-amber-500/10 rounded transition-all"
+                        >
+                          Re-enroll
+                        </button>
+                        <button
+                          onClick={() => handleDeleteVoice(member.id)}
+                          className="p-1 text-white/20 hover:text-red-400 hover:bg-red-500/10 rounded transition-all"
+                          title="Delete voice profile"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setEnrollingMember(member)}
+                        className="flex items-center gap-1 px-2.5 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded text-[10px] hover:bg-amber-500/20 transition-all"
+                      >
+                        <Mic className="w-2.5 h-2.5" />
+                        Enroll
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <p className="text-[9px] text-white/20 leading-relaxed">
+                  Voice profiles enable hands-free speaker identification.
+                  All data stays on this device.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="border-t border-[#3a3a44]/30" />

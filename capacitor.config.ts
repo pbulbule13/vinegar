@@ -7,7 +7,7 @@ const config: CapacitorConfig = {
   server: {
     // Point to your desktop server IP on your local network
     // Change this to your actual PC's LAN IP address
-    url: 'http://192.168.1.15:3001',
+    url: 'http://192.168.1.15:3000',
     cleartext: true,
     androidScheme: 'http',
   },
