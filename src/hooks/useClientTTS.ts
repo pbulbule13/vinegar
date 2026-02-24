@@ -11,7 +11,7 @@ export interface TTSSettings {
 
 const DEFAULT_TTS: TTSSettings = {
   language: "en-US",
-  speed: 1.2,
+  speed: 1.6,
   pitch: 1.0,
   voiceName: "",
 };
