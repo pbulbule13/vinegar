@@ -118,16 +118,20 @@ export function useClientTTS(onSpeakEnd?: () => void): UseClientTTSReturn {
     loadVoices();
     window.speechSynthesis.onvoiceschanged = loadVoices;
 
-    // Retry after 2s if voices haven't loaded (Android WebView quirk)
-    const retryTimer = setTimeout(() => {
-      if (window.speechSynthesis.getVoices().length === 0) {
-        loadVoices();
-      }
-    }, 2000);
+    // Retry multiple times if voices haven't loaded (Android WebView quirk)
+    const retryTimers = [500, 1500, 3000, 5000].map(ms =>
+      setTimeout(() => {
+        if (window.speechSynthesis.getVoices().length === 0) {
+          // Chrome Android sometimes needs a resume() kick to load voices
+          window.speechSynthesis.cancel();
+          loadVoices();
+        }
+      }, ms)
+    );
 
     return () => {
       window.speechSynthesis.onvoiceschanged = null;
-      clearTimeout(retryTimer);
+      retryTimers.forEach(t => clearTimeout(t));
     };
   }, [isSupported]);
 
@@ -334,9 +338,14 @@ export function useClientTTS(onSpeakEnd?: () => void): UseClientTTSReturn {
       if (!clean) return;
 
       // Check if browser TTS is available with voices
+      // Re-check voices at speak time (they may have loaded since init)
       const browserVoices = isSupported
         ? window.speechSynthesis.getVoices()
         : [];
+
+      if (browserVoices.length > 0 && !hasVoices) {
+        setHasVoices(true);
+      }
 
       if (!isSupported || browserVoices.length === 0) {
         cancelledRef.current = false;
