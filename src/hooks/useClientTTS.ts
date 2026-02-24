@@ -11,7 +11,7 @@ export interface TTSSettings {
 
 const DEFAULT_TTS: TTSSettings = {
   language: "en-US",
-  speed: 1.6,
+  speed: 1.8,
   pitch: 1.0,
   voiceName: "",
 };
@@ -284,8 +284,31 @@ export function useClientTTS(onSpeakEnd?: () => void): UseClientTTSReturn {
       utterance.pitch = Math.max(0.5, Math.min(2.0, current.pitch));
       utterance.volume = 1.0;
 
-      utterance.onend = onChunkEnd;
-      utterance.onerror = onChunkEnd;
+      // Safety timeout: if onend/onerror never fires (Android WebView bug),
+      // force advance after estimated duration + 3s buffer
+      const estimatedMs = (chunkText.length / 15) * (1000 / current.speed) + 3000;
+      let resolved = false;
+      const safetyTimer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          onChunkEnd();
+        }
+      }, estimatedMs);
+
+      utterance.onend = () => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(safetyTimer);
+          onChunkEnd();
+        }
+      };
+      utterance.onerror = () => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(safetyTimer);
+          onChunkEnd();
+        }
+      };
 
       window.speechSynthesis.speak(utterance);
     },
@@ -305,7 +328,6 @@ export function useClientTTS(onSpeakEnd?: () => void): UseClientTTSReturn {
         fallbackAudioRef.current.pause();
         fallbackAudioRef.current = null;
       }
-      cancelledRef.current = false;
 
       const current = { ...settingsRef.current, ...overrides };
       const clean = cleanForSpeech(text);
@@ -317,33 +339,39 @@ export function useClientTTS(onSpeakEnd?: () => void): UseClientTTSReturn {
         : [];
 
       if (!isSupported || browserVoices.length === 0) {
-        // Fallback to server-side TTS
+        cancelledRef.current = false;
         speakFallback(clean);
         return;
       }
 
-      // Client-side TTS with chunking
-      const chunks = splitIntoChunks(clean, 150);
-      chunkQueueRef.current = chunks;
-      speakingRef.current = true;
-      setIsSpeaking(true);
+      // Small delay after cancel to avoid Chrome/Android dead-state bug
+      // where cancel() + immediate speak() causes synthesis to freeze
+      setTimeout(() => {
+        cancelledRef.current = false;
 
-      const voice = findVoice(current.language, current.voiceName);
+        // Client-side TTS with chunking
+        const chunks = splitIntoChunks(clean, 150);
+        chunkQueueRef.current = chunks;
+        speakingRef.current = true;
+        setIsSpeaking(true);
 
-      const playNextChunk = () => {
-        if (cancelledRef.current || chunkQueueRef.current.length === 0) {
-          speakingRef.current = false;
-          setIsSpeaking(false);
-          chunkQueueRef.current = [];
-          if (!cancelledRef.current) onSpeakEnd?.();
-          return;
-        }
+        const voice = findVoice(current.language, current.voiceName);
 
-        const chunk = chunkQueueRef.current.shift()!;
-        speakChunk(chunk, current, voice, playNextChunk);
-      };
+        const playNextChunk = () => {
+          if (cancelledRef.current || chunkQueueRef.current.length === 0) {
+            speakingRef.current = false;
+            setIsSpeaking(false);
+            chunkQueueRef.current = [];
+            if (!cancelledRef.current) onSpeakEnd?.();
+            return;
+          }
 
-      playNextChunk();
+          const chunk = chunkQueueRef.current.shift()!;
+          speakChunk(chunk, current, voice, playNextChunk);
+        };
+
+        playNextChunk();
+      }, 100);
     },
     [isSupported, findVoice, speakChunk, speakFallback, onSpeakEnd]
   );
