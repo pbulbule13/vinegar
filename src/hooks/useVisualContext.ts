@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type {
   VisualContext, VisualContextError, VisualToolName,
-  UseVisualContextOptions, UseVisualContextReturn,
+  UseVisualContextOptions, UseVisualContextReturn, WebSearchResult,
 } from '@/types/visual-context';
 import type { ToolResult } from '@/lib/tool-executor';
 import { detectVisualContext, extractVisualHint, buildContextFromToolResult } from '@/lib/visual-context-detector';
@@ -144,6 +144,63 @@ export function useVisualContext(options?: UseVisualContextOptions): UseVisualCo
     });
   }, [updateContext]);
 
+  /**
+   * Explicitly search the web for a query and show results in panel.
+   * Used by the panel's search bar and auto-search on unanswered questions.
+   */
+  const searchWeb = useCallback(async (query: string) => {
+    if (!query.trim()) return;
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const currentTurn = ++turnRef.current;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/web-search?q=${encodeURIComponent(query.trim())}`, {
+        signal: controller.signal,
+      });
+      if (currentTurn !== turnRef.current) return;
+      if (!res.ok) throw new Error('Search failed');
+
+      const data = await res.json();
+      const results: WebSearchResult[] = (data.results || []).map((r: { title: string; url: string; snippet: string }) => ({
+        title: r.title,
+        url: r.url,
+        snippet: r.snippet,
+      }));
+
+      if (results.length === 0 && !data.instantAnswer) {
+        setIsLoading(false);
+        handleError('FETCH_FAILED', 'No web results found', true);
+        return;
+      }
+
+      const ctx: VisualContext = {
+        cardType: 'web-search',
+        query: query.trim(),
+        confidence: 0.95,
+        extractedKeywords: [],
+        images: [],
+        toolData: {
+          results,
+          instantAnswer: data.instantAnswer || undefined,
+          source: data.source || undefined,
+          sourceUrl: data.sourceUrl || undefined,
+        },
+      };
+
+      setIsLoading(false);
+      updateContext(ctx);
+    } catch {
+      if (currentTurn !== turnRef.current) return;
+      handleError('FETCH_FAILED', 'Web search failed', true);
+    }
+  }, [updateContext, handleError]);
+
   const clear = useCallback(() => {
     abortRef.current?.abort();
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -169,6 +226,7 @@ export function useVisualContext(options?: UseVisualContextOptions): UseVisualCo
     updateFromMessage,
     updateFromResponse,
     updateFromToolResult,
+    searchWeb,
     clear,
   };
 }

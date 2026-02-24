@@ -132,13 +132,31 @@ export function useWakeWord(options: UseWakeWordOptions = {}): UseWakeWordReturn
     recognition.onend = () => {
       // Auto-restart for continuous passive listening (use ref to avoid stale closure)
       if (isPassiveListeningRef.current) {
-        try {
-          setTimeout(() => {
-            if (recognitionRef.current) {
+        setTimeout(() => {
+          if (isPassiveListeningRef.current && recognitionRef.current) {
+            try {
               recognitionRef.current.start();
+            } catch {
+              // On Android, start() can throw if recognition is in bad state
+              // Recreate the recognition instance after a longer delay
+              setTimeout(() => {
+                if (isPassiveListeningRef.current) {
+                  try {
+                    const fresh = new SpeechRecognition();
+                    fresh.continuous = recognitionRef.current?.continuous ?? true;
+                    fresh.interimResults = true;
+                    fresh.lang = recognitionRef.current?.lang ?? "en-US";
+                    fresh.onresult = recognitionRef.current?.onresult ?? null;
+                    fresh.onerror = recognitionRef.current?.onerror ?? null;
+                    fresh.onend = recognitionRef.current?.onend ?? null;
+                    recognitionRef.current = fresh;
+                    fresh.start();
+                  } catch {}
+                }
+              }, 1000);
             }
-          }, 100);
-        } catch {}
+          }
+        }, 300);
       }
     };
 

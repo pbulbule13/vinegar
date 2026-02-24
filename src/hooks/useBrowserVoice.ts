@@ -88,6 +88,7 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const chatHistoryRef = useRef<{ role: "user" | "assistant"; content: string }[]>([]);
   const echoGapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const speakingSafetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Sticky language tracking
   const currentLangRef = useRef<SupportedLanguage>(sttLanguage as SupportedLanguage);
@@ -142,6 +143,11 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
   // ─── TTS completion handler (called by parent via notifySpeakEnd) ───
 
   const notifySpeakEnd = useCallback(() => {
+    // Clear safety timer
+    if (speakingSafetyTimerRef.current) {
+      clearTimeout(speakingSafetyTimerRef.current);
+      speakingSafetyTimerRef.current = null;
+    }
     if (stateRef.current !== "SPEAKING") return;
     transitionTo("IDLE");
     restartListening();
@@ -154,25 +160,34 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
       clearTimeout(echoGapTimerRef.current);
       echoGapTimerRef.current = null;
     }
+    if (speakingSafetyTimerRef.current) {
+      clearTimeout(speakingSafetyTimerRef.current);
+      speakingSafetyTimerRef.current = null;
+    }
 
     transitionTo("SPEAKING");
 
     if (onSpeak) {
       onSpeak(text);
-      // If parent provides onSpeakEnd prop, we rely on notifySpeakEnd being called.
-      // Otherwise fall back to duration estimation.
-      if (!onSpeakEndProp) {
-        const estimatedDuration = Math.max(2000, (text.length / 15) * 1000 / 1.2);
-        setTimeout(() => {
-          notifySpeakEnd();
-        }, estimatedDuration);
-      }
+
+      // ALWAYS set a safety timeout regardless of onSpeakEndProp.
+      // On Android WebView, TTS callbacks often fail silently.
+      // This ensures we NEVER get permanently stuck in SPEAKING state.
+      const maxSpeakMs = Math.max(5000, (text.length / 10) * 1000 / 1.5 + 5000);
+      speakingSafetyTimerRef.current = setTimeout(() => {
+        speakingSafetyTimerRef.current = null;
+        if (stateRef.current === "SPEAKING") {
+          console.warn("[Voice] Safety timeout: forcing out of SPEAKING state");
+          transitionTo("IDLE");
+          restartListening();
+        }
+      }, maxSpeakMs);
     } else {
       // No TTS, immediately ready to listen again
       transitionTo("IDLE");
       restartListening();
     }
-  }, [onSpeak, onSpeakEndProp, notifySpeakEnd, restartListening]);
+  }, [onSpeak, notifySpeakEnd, restartListening]);
 
   // ─── Process transcript with LLM ───
 
@@ -206,6 +221,7 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
           messages: chatHistoryRef.current.slice(-10),
           model,
           language: currentLangRef.current,
+          source: "voice",
         }),
       });
 
@@ -217,7 +233,7 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
       onAIResponse?.(aiText);
 
       // Notify parent about tool results for visual context
-      const visualTools = ['get_weather', 'get_forecast', 'find_nearby', 'get_traffic', 'suggest_recipe', 'show_visual'];
+      const visualTools = ['get_weather', 'get_forecast', 'find_nearby', 'get_traffic', 'suggest_recipe', 'show_visual', 'web_search'];
       if (data.toolsUsed && Array.isArray(data.toolsUsed) && onToolResult) {
         for (const toolName of data.toolsUsed) {
           if (visualTools.includes(toolName)) {
@@ -344,9 +360,14 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
 
       if (isConnectedRef.current && stateRef.current !== "PROCESSING" && stateRef.current !== "SPEAKING") {
         setTimeout(() => {
-          if (stateRef.current === "IDLE" || stateRef.current === "SWITCHING_LANG") {
-            transitionTo("LISTENING");
-            try { recognition.start(); } catch {}
+          if (isConnectedRef.current) {
+            if (stateRef.current === "IDLE" || stateRef.current === "SWITCHING_LANG") {
+              transitionTo("LISTENING");
+              try { recognition.start(); } catch {}
+            } else if (stateRef.current === "LISTENING") {
+              // Already in LISTENING state but recognition ended — restart
+              try { recognition.start(); } catch {}
+            }
           }
         }, 500);
       }
@@ -366,6 +387,7 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
     isConnectedRef.current = false;
     stateRef.current = "IDLE";
     if (echoGapTimerRef.current) { clearTimeout(echoGapTimerRef.current); echoGapTimerRef.current = null; }
+    if (speakingSafetyTimerRef.current) { clearTimeout(speakingSafetyTimerRef.current); speakingSafetyTimerRef.current = null; }
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch {}
       recognitionRef.current = null;
@@ -406,6 +428,7 @@ export function useBrowserVoice(options: UseBrowserVoiceOptions = {}): UseBrowse
       stateRef.current = "IDLE";
       chatHistoryRef.current = [];
       if (echoGapTimerRef.current) clearTimeout(echoGapTimerRef.current);
+      if (speakingSafetyTimerRef.current) clearTimeout(speakingSafetyTimerRef.current);
       if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch {}
         recognitionRef.current = null;

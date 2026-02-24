@@ -41,12 +41,24 @@ interface ImageOnlyVisualContext extends VisualContextBase {
   readonly toolData?: undefined;
 }
 
+export interface WebSearchResult {
+  readonly title: string;
+  readonly url: string;
+  readonly snippet: string;
+}
+
+interface WebSearchVisualContext extends VisualContextBase {
+  readonly cardType: 'web-search';
+  readonly toolData: { results: readonly WebSearchResult[]; instantAnswer?: string; source?: string; sourceUrl?: string };
+}
+
 export type VisualContext =
   | WeatherVisualContext
   | PlaceVisualContext
   | RecipeVisualContext
   | TrafficVisualContext
-  | ImageOnlyVisualContext;
+  | ImageOnlyVisualContext
+  | WebSearchVisualContext;
 
 export type CardType = VisualContext['cardType'];
 
@@ -99,6 +111,7 @@ export interface UseVisualContextReturn {
   readonly updateFromMessage: (userMsg: string) => void;
   readonly updateFromResponse: (aiResponse: string) => void;
   readonly updateFromToolResult: (toolName: VisualToolName, result: ToolResult) => void;
+  readonly searchWeb: (query: string) => void;
   readonly clear: () => void;
 }
 

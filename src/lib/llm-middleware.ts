@@ -81,6 +81,7 @@ interface LLMOptions {
   language?: string; // "en-US" | "hi-IN" | "mr-IN" etc.
   activeMemberId?: string; // From speaker identification (overrides DB query)
   visualContext?: string; // Current visual panel state, e.g. "weather card for Fremont"
+  source?: "voice" | "text"; // Interaction source — voice gets ultra-concise responses
 }
 
 interface LLMResult {
@@ -334,7 +335,7 @@ export async function callLLM(
   messages: LLMMessage[],
   options: LLMOptions
 ): Promise<LLMResult> {
-  const { model: requestedModel = 'gemini-2.5-flash', temperature = 0.7, maxTokens = 2048, enableTools = true, apiKey, language, activeMemberId, visualContext } = options;
+  const { model: requestedModel = 'gemini-2.5-flash', temperature = 0.7, maxTokens = 2048, enableTools = true, apiKey, language, activeMemberId, visualContext, source = 'text' } = options;
 
   // 0. Check daily budget
   const budget = checkDailyBudget();
@@ -381,7 +382,10 @@ export async function callLLM(
 
   // 3. Build system prompt with static content FIRST (for prompt caching)
   const languagePrompt = language ? getLanguagePrompt(language) : '';
-  const systemPrompt = `${VINEGAR_SYSTEM_PROMPT}${languagePrompt}${childSafetyAddendum}${toolInstructions}${memoryContext}`;
+  const voiceBrevity = source === 'voice'
+    ? '\n\nCRITICAL: This is a VOICE conversation. You MUST respond in 1-2 SHORT sentences only. No lists, no formatting, no explanations unless asked. Be like a human assistant giving a quick spoken answer.'
+    : '';
+  const systemPrompt = `${VINEGAR_SYSTEM_PROMPT}${voiceBrevity}${languagePrompt}${childSafetyAddendum}${toolInstructions}${memoryContext}`;
 
   // 3.5 Trim messages to fit token budget
   const { messages: trimmedMsgs } = trimToFit(systemPrompt, messages, memoryContext);

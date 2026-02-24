@@ -1,9 +1,9 @@
 "use client";
 
-import { memo, Component, type ReactNode, useState, useEffect, useRef } from "react";
+import { memo, Component, type ReactNode, useState, useEffect, useRef, useCallback } from "react";
 import type { VisualContext, VisualContextError } from "@/types/visual-context";
 import { ContextCard } from "./context-card";
-import { Loader2, ImageOff, Eye } from "lucide-react";
+import { Loader2, ImageOff, Eye, Search } from "lucide-react";
 
 // ── Error Boundary ──
 
@@ -36,12 +36,12 @@ class PanelErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryStat
 
 // ── Empty State ──
 
-function EmptyState({ onExampleClick }: { onExampleClick?: (prompt: string) => void }) {
+function EmptyState({ onExampleClick, onWebSearch }: { onExampleClick?: (prompt: string) => void; onWebSearch?: (query: string) => void }) {
   const examples = [
-    "What is the weather?",
-    "Find cafes nearby",
-    "Recipe for dal",
-    "Show me turmeric",
+    "Best restaurants in Fremont",
+    "How to fix a leaky faucet",
+    "Recipe for dal makhani",
+    "News today",
   ];
 
   return (
@@ -59,7 +59,7 @@ function EmptyState({ onExampleClick }: { onExampleClick?: (prompt: string) => v
         {examples.map((example) => (
           <button
             key={example}
-            onClick={() => onExampleClick?.(example)}
+            onClick={() => onWebSearch ? onWebSearch(example) : onExampleClick?.(example)}
             className="px-2 py-1 text-[9px] font-mono text-white/20 border border-white/5 rounded-md hover:text-amber-400/50 hover:border-amber-500/20 transition-colors"
           >
             {example}
@@ -99,6 +99,7 @@ interface ContextPanelProps {
   isLoading: boolean;
   error: VisualContextError | null;
   onExampleClick?: (prompt: string) => void;
+  onWebSearch?: (query: string) => void;
 }
 
 export const ContextPanel = memo(function ContextPanel({
@@ -106,9 +107,12 @@ export const ContextPanel = memo(function ContextPanel({
   isLoading,
   error,
   onExampleClick,
+  onWebSearch,
 }: ContextPanelProps) {
   const [isFlashing, setIsFlashing] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
   const prevContextRef = useRef<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Trigger flash animation when new context arrives
   useEffect(() => {
@@ -121,6 +125,15 @@ export const ContextPanel = memo(function ContextPanel({
     }
     if (!newQuery) prevContextRef.current = null;
   }, [context?.query]);
+
+  const handleSearch = useCallback((e?: React.FormEvent) => {
+    e?.preventDefault();
+    const q = searchInput.trim();
+    if (q && onWebSearch) {
+      onWebSearch(q);
+      setSearchInput("");
+    }
+  }, [searchInput, onWebSearch]);
 
   return (
     <PanelErrorBoundary>
@@ -153,10 +166,31 @@ export const ContextPanel = memo(function ContextPanel({
           }}
         />
 
-        {/* Panel header */}
-        <div className="relative px-3 py-2 border-b border-white/5 flex items-center gap-2">
-          <Eye className="w-3 h-3 text-white/20" />
-          <span className="text-[9px] font-mono text-white/25 tracking-wider uppercase">Context</span>
+        {/* Panel header with search bar */}
+        <div className="relative px-3 py-2 border-b border-white/5 space-y-2">
+          <div className="flex items-center gap-2">
+            <Eye className="w-3 h-3 text-white/20" />
+            <span className="text-[9px] font-mono text-white/25 tracking-wider uppercase">Browse & Search</span>
+          </div>
+          {onWebSearch && (
+            <form onSubmit={handleSearch} className="flex gap-1">
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Search the web..."
+                className="flex-1 bg-white/5 border border-white/10 rounded-md px-2 py-1 text-[11px] text-white/70 placeholder:text-white/20 focus:outline-none focus:border-amber-500/30 focus:ring-1 focus:ring-amber-500/10"
+              />
+              <button
+                type="submit"
+                disabled={!searchInput.trim()}
+                className="px-2 py-1 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400/60 hover:text-amber-400 hover:bg-amber-500/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <Search className="w-3 h-3" />
+              </button>
+            </form>
+          )}
         </div>
 
         {/* Panel body — aria-live for screen readers */}
@@ -180,7 +214,7 @@ export const ContextPanel = memo(function ContextPanel({
               )}
             </div>
           ) : (
-            <EmptyState onExampleClick={onExampleClick} />
+            <EmptyState onExampleClick={onExampleClick} onWebSearch={onWebSearch} />
           )}
         </div>
       </aside>

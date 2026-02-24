@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { messages, model, language } = parsed.data;
+    const { messages, model, language, source } = parsed.data;
 
     // Check offline commands first - saves tokens for simple queries
     const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
@@ -55,6 +55,7 @@ export async function POST(request: Request) {
         apiKey,
         enableTools: true,
         language,
+        source: source || "text",
       }
     );
 

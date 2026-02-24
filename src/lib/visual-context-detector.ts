@@ -190,6 +190,23 @@ export function buildContextFromToolResult(
         },
       };
     }
+    case 'web_search': {
+      const webResults = (data.web_results as Array<{ title: string; url: string; snippet: string }>) || [];
+      if (webResults.length === 0 && !data.instant_answer) return null;
+      return {
+        cardType: 'web-search',
+        query: String(data.query || result.message?.slice(0, 50) || 'search'),
+        confidence: toConfidence(0.95),
+        extractedKeywords: [],
+        images,
+        toolData: {
+          results: webResults.map(r => ({ title: r.title, url: r.url, snippet: r.snippet })),
+          instantAnswer: data.instant_answer ? String(data.instant_answer) : undefined,
+          source: data.source ? String(data.source) : undefined,
+          sourceUrl: data.source_url ? String(data.source_url) : undefined,
+        },
+      };
+    }
     case 'show_visual': {
       const cardType = (data.card_type as string) || 'image-only';
       return {

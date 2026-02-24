@@ -129,6 +129,7 @@ export default function VinegarHome() {
   // Wake word detection with full sleep/wake cycle
   const {
     isAwake,
+    isPassiveListening,
     startPassiveListening,
     stopPassiveListening,
   } = useWakeWord({
@@ -136,7 +137,12 @@ export default function VinegarHome() {
     sttLanguage,
     onWake: () => {
       if (!isActive) {
-        handleVoiceActivate();
+        // CRITICAL: Stop passive listening BEFORE starting active voice
+        // Only one SpeechRecognition instance can be active at a time
+        stopPassiveListening();
+        setTimeout(() => {
+          handleVoiceActivate();
+        }, 200); // Small delay to let recognition fully stop
       }
     },
     onSleep: () => {
@@ -145,6 +151,10 @@ export default function VinegarHome() {
         disconnect();
         setIsActive(false);
         speakText("Going to sleep. Say Vinegar when you need me.");
+        // Restart passive listening after voice deactivates
+        setTimeout(() => {
+          if (wakeWordEnabled) startPassiveListening();
+        }, 1000);
       }
     },
     sleepAfterMs: 60000,
@@ -223,17 +233,27 @@ export default function VinegarHome() {
       disconnect();
       setIsActive(false);
       setIdentifiedSpeaker(null);
+      // Restart passive listening if wake word is enabled
+      if (wakeWordEnabled) {
+        setTimeout(() => startPassiveListening(), 500);
+      }
     } else {
       try {
+        // Stop passive listening to free up SpeechRecognition
+        stopPassiveListening();
+        await new Promise(r => setTimeout(r, 200));
         await speakerId.identifyOnce();
         await connect();
         await startListening();
         setIsActive(true);
       } catch {
-        // Voice activation failed
+        // Voice activation failed — restart passive if wake word enabled
+        if (wakeWordEnabled) {
+          setTimeout(() => startPassiveListening(), 500);
+        }
       }
     }
-  }, [isActive, connect, disconnect, startListening, stopListening, speakerId]);
+  }, [isActive, connect, disconnect, startListening, stopListening, speakerId, wakeWordEnabled, startPassiveListening, stopPassiveListening]);
 
   const toggleWakeWord = useCallback(() => {
     if (wakeWordEnabled) {
@@ -357,6 +377,18 @@ export default function VinegarHome() {
       // Tier 2: Check for [visual:] hints in completed response
       visualContext.updateFromResponse(fullResponse);
 
+      // Auto web search: if response seems like it couldn't answer, search the web
+      const cantAnswerPatterns = /i don't have|i'm not sure|i cannot|i can't help with|i don't know|no information|unable to find|beyond my|outside my/i;
+      if (cantAnswerPatterns.test(fullResponse) && text.length > 10) {
+        visualContext.searchWeb(text);
+      }
+
+      // Also trigger web search for question-like queries that didn't use tools
+      const isQuestion = /^(what|who|when|where|why|how|which|is|are|can|does|do|will|should)\b/i.test(text);
+      if (isQuestion && !cantAnswerPatterns.test(fullResponse) && !visualContext.context) {
+        visualContext.searchWeb(text);
+      }
+
       // Strip [visual:] hints before storing in history
       const cleanedResponse = stripVisualHint(fullResponse);
       const updatedHistory = [...newHistory, { role: "assistant" as const, content: cleanedResponse }];
@@ -479,9 +511,9 @@ export default function VinegarHome() {
           </div>
         </div>
 
-        {/* Visual Context Panel — tablet+ sidebar with toggle */}
+        {/* Browse & Search Panel — 50/50 split on tablet+ */}
         {showVisualPanel && (
-          <div className="hidden md:block w-72 lg:w-80 xl:w-96 flex-shrink-0 sticky top-0 h-[calc(100vh-4rem)]">
+          <div className="hidden md:block md:w-1/2 lg:w-1/2 xl:w-1/2 flex-shrink-0 sticky top-0 h-[calc(100vh-4rem)]">
             <ContextPanel
               context={visualContext.context}
               isLoading={visualContext.isLoading}
@@ -490,6 +522,7 @@ export default function VinegarHome() {
                 setTextInput(prompt);
                 inputRef.current?.focus();
               }}
+              onWebSearch={(query) => visualContext.searchWeb(query)}
             />
           </div>
         )}

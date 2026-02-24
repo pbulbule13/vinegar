@@ -19,7 +19,7 @@ export interface SearchResult {
 
 // ─── DuckDuckGo Instant Answer API (fast, structured) ───
 
-async function queryInstantAnswer(query: string): Promise<{ abstract: string; source: string; url: string } | null> {
+export async function queryInstantAnswer(query: string): Promise<{ abstract: string; source: string; url: string } | null> {
   const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
 
   const controller = new AbortController();

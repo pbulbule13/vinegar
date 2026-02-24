@@ -41,6 +41,7 @@ export const chatRequestSchema = z.object({
   model: z.string().max(100).optional(),
   language: z.string().max(10).optional(), // "en-US" | "hi-IN" | "mr-IN" etc.
   visualContext: z.string().max(200).optional(), // Current visual panel state, e.g. "weather card for Fremont"
+  source: z.enum(["voice", "text"]).optional(), // Interaction source — voice gets ultra-concise responses
 });
 
 // ─── Family Routes ───
