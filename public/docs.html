@@ -597,8 +597,8 @@
       <h2>Table of Contents</h2>
       <div class="toc-grid">
         <a href="#overview" class="toc-item"><span class="toc-num">1</span> Overview</a>
-        <a href="#tools" class="toc-item"><span class="toc-num">2</span> Tools Reference (26)</a>
-        <a href="#api" class="toc-item"><span class="toc-num">3</span> API Routes (21)</a>
+        <a href="#tools" class="toc-item"><span class="toc-num">2</span> Tools Reference (28)</a>
+        <a href="#api" class="toc-item"><span class="toc-num">3</span> API Routes (26)</a>
         <a href="#voice" class="toc-item"><span class="toc-num">4</span> Voice Features</a>
         <a href="#privacy" class="toc-item"><span class="toc-num">5</span> Privacy &amp; Security</a>
         <a href="#settings" class="toc-item"><span class="toc-num">6</span> Settings</a>
@@ -1460,6 +1460,62 @@
           </div>
         </div>
 
+        <!-- Tool 27: manage_language -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">27</span>
+            <span class="tool-name">manage_language</span>
+            <span class="tool-desc">Get or set active language for STT/TTS</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Gets or sets the active language for speech recognition and text-to-speech. Supports English US (en-US), English India (en-IN), Hindi (hi-IN), and Marathi (mr-IN). Language is also auto-detected from user speech and text input.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>action</td><td>"get" | "set"</td><td>Get current language or set a new one</td></tr>
+                <tr><td>language</td><td>string?</td><td>Language code to set (e.g., "hi-IN")</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "manage_language",
+  "args": {
+    "action": "set",
+    "language": "hi-IN"
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Tool 28: show_visual -->
+        <div class="tool-card" onclick="this.classList.toggle('open')">
+          <div class="tool-header">
+            <span class="tool-number">28</span>
+            <span class="tool-name">show_visual</span>
+            <span class="tool-desc">Show image or info card in visual context panel</span>
+            <span class="tool-chevron">&#9654;</span>
+          </div>
+          <div class="tool-body">
+            <p>Displays an image or info card in the visual context panel. Use when the user asks "show me", "what does X look like", or when a visual would enhance the response. Images are sourced from Pexels (primary) with Unsplash fallback. All queries are PII-sanitized.</p>
+            <table class="arg-table">
+              <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+              <tbody>
+                <tr><td>query</td><td>string</td><td>What to search for (e.g., "turmeric", "Italian restaurant")</td></tr>
+                <tr><td>card_type</td><td>string?</td><td>Card type: "weather", "place", "recipe", "traffic", or "image-only"</td></tr>
+              </tbody>
+            </table>
+            <h4>Example</h4>
+            <pre><code>{
+  "tool": "show_visual",
+  "args": {
+    "query": "turmeric root",
+    "card_type": "image-only"
+  }
+}</code></pre>
+          </div>
+        </div>
+
       </div>
     </section>
 
@@ -1470,7 +1526,7 @@
           <span class="section-num">3</span>
           <h2>API Routes</h2>
         </div>
-        <p>Vinegar exposes <strong style="color:#d4a843;">21 API routes</strong> for the frontend and external integrations. All routes are served from the Next.js server.</p>
+        <p>Vinegar exposes <strong style="color:#d4a843;">26 API routes</strong> for the frontend and external integrations. All routes are served from the Next.js server.</p>
 
         <div style="overflow-x: auto;">
           <table class="api-table">
@@ -1576,6 +1632,36 @@
                 <td><span class="method-badge method-post">POST</span></td>
                 <td class="api-path">/api/tools/*</td>
                 <td>Direct tool execution. Calls any registered tool by name.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-both">GET/POST</span></td>
+                <td class="api-path">/api/family/voice-profiles</td>
+                <td>Voice enrollment profiles. GET to list embeddings, used for speaker identification.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-both">GET/POST</span></td>
+                <td class="api-path">/api/activities</td>
+                <td>Child activities and extracurriculars. GET to list, POST to add/update.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-post">POST</span></td>
+                <td class="api-path">/api/images/search</td>
+                <td>Image search for visual context panel. Uses Pexels (primary) + Unsplash (fallback). PII-sanitized.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-get">GET</span></td>
+                <td class="api-path">/api/images/proxy</td>
+                <td>SSRF-hardened image proxy. Serves images from allowlisted domains (Pexels, Unsplash) only.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-post">POST</span></td>
+                <td class="api-path">/api/calendar/sync</td>
+                <td>Calendar sync endpoint for external calendar integration.</td>
+              </tr>
+              <tr>
+                <td><span class="method-badge method-post">POST</span></td>
+                <td class="api-path">/api/ai/realtime-token</td>
+                <td>Generate ephemeral token for OpenAI Realtime API (premium voice).</td>
               </tr>
             </tbody>
           </table>

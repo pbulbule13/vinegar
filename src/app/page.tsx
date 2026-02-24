@@ -290,10 +290,15 @@ export default function VinegarHome() {
     const streamMsgId = `vinegar_stream_${Date.now()}`;
 
     try {
+      // Build visual context summary for LLM awareness
+      const visualSummary = visualContext.context
+        ? `${visualContext.context.cardType} card for ${visualContext.context.query}`
+        : undefined;
+
       const res = await fetch("/api/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newHistory, model: selectedModel, language: chatLanguage }),
+        body: JSON.stringify({ messages: newHistory, model: selectedModel, language: chatLanguage, visualContext: visualSummary }),
       });
 
       if (!res.ok) {
@@ -399,6 +404,14 @@ export default function VinegarHome() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#050508] relative overflow-hidden">
+      {/* Skip navigation link for keyboard users */}
+      <a
+        href="#main-chat"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-charcoal focus:text-amber-400 focus:rounded-lg focus:text-sm focus:font-mono focus:border focus:border-amber-500/30"
+      >
+        Skip to chat
+      </a>
+
       {/* Ambient background effects */}
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] rounded-full bg-amber-500/[0.02] blur-[120px]" />
@@ -424,7 +437,7 @@ export default function VinegarHome() {
       {/* Main Content — split-screen layout on desktop */}
       <main className="relative z-10 flex-1 flex flex-col lg:flex-row px-4 sm:px-8 overflow-hidden">
         {/* Chat Column */}
-        <div className="flex-1 flex flex-col items-center min-w-0">
+        <div id="main-chat" className="flex-1 flex flex-col items-center min-w-0">
           <ChatColumn
             messages={messages}
             aiTranscript={aiTranscript}

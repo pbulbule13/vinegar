@@ -40,6 +40,7 @@ const config: Config = {
         'listening-pulse': 'listeningPulse 1.5s ease-in-out infinite',
         'fadeIn': 'fadeIn 200ms ease-out',
         'fadeSlideIn': 'fadeSlideIn 200ms ease-out',
+        'panel-flash': 'panelFlash 1.2s ease-out',
       },
       keyframes: {
         glowPulse: {
@@ -57,6 +58,10 @@ const config: Config = {
         fadeSlideIn: {
           from: { opacity: '0', transform: 'translateY(8px)' },
           to: { opacity: '1', transform: 'translateY(0)' },
+        },
+        panelFlash: {
+          '0%': { borderColor: 'rgba(245, 158, 11, 0.5)', boxShadow: '0 0 20px rgba(245, 158, 11, 0.15)' },
+          '100%': { borderColor: 'rgba(42, 42, 50, 0.3)', boxShadow: 'none' },
         },
       },
     },

@@ -28,7 +28,7 @@ Tools: manage_grocery({action,item,quantity,unit,category}), create_event({title
 `;
 }
 
-function buildMemoryContext(userMessage: string): string {
+function buildMemoryContext(userMessage: string, visualContext?: string): string {
   const sections: string[] = [];
   try {
     const members = db.prepare('SELECT name, role FROM family_members').all() as { name: string; role: string }[];
@@ -43,6 +43,10 @@ function buildMemoryContext(userMessage: string): string {
       memories.forEach(m => sections.push(`- [${m.type}] ${m.topic}: ${m.content}`));
     }
   } catch {}
+
+  if (visualContext) {
+    sections.push(`[Visual Panel] Currently showing: ${visualContext}`);
+  }
 
   return sections.length > 0 ? '\n---\n' + sections.join('\n') + '\n---' : '';
 }
@@ -68,7 +72,7 @@ export async function POST(request: Request) {
       return new Response(JSON.stringify({ error: "Invalid request" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
 
-    const { messages, model: requestedModel, language } = parsed.data;
+    const { messages, model: requestedModel, language, visualContext } = parsed.data;
     const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
 
     // Check offline commands first - saves tokens
@@ -90,7 +94,7 @@ export async function POST(request: Request) {
     }
 
     const model = selectModel(lastUserMsg, requestedModel || 'gemini-2.5-flash');
-    const memoryContext = buildMemoryContext(lastUserMsg);
+    const memoryContext = buildMemoryContext(lastUserMsg, visualContext);
     const toolInstructions = getToolInstructions();
     const languagePrompt = language ? getLanguagePrompt(language) : '';
     const systemPrompt = `${VINEGAR_SYSTEM_PROMPT}${languagePrompt}${toolInstructions}${memoryContext}`;

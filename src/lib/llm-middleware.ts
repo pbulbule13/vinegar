@@ -80,6 +80,7 @@ interface LLMOptions {
   apiKey: string;
   language?: string; // "en-US" | "hi-IN" | "mr-IN" etc.
   activeMemberId?: string; // From speaker identification (overrides DB query)
+  visualContext?: string; // Current visual panel state, e.g. "weather card for Fremont"
 }
 
 interface LLMResult {
@@ -100,7 +101,7 @@ function sanitizeContext(text: string): string {
 
 // ─── Context Builder ───
 
-function buildMemoryContext(userMessage: string, activeMemberId?: string): string {
+function buildMemoryContext(userMessage: string, activeMemberId?: string, visualContext?: string): string {
   const sections: string[] = [];
 
   // Level 0: Family names (always injected)
@@ -251,6 +252,11 @@ function buildMemoryContext(userMessage: string, activeMemberId?: string): strin
     } catch {}
   }
 
+  // Inject visual panel state so LLM can reference what the user sees
+  if (visualContext) {
+    sections.push(`[Visual Panel] Currently showing: ${visualContext}`);
+  }
+
   // Inject current date/time for time-aware responses
   const now = new Date();
   sections.unshift(`[Now] ${now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
@@ -328,7 +334,7 @@ export async function callLLM(
   messages: LLMMessage[],
   options: LLMOptions
 ): Promise<LLMResult> {
-  const { model: requestedModel = 'gemini-2.5-flash', temperature = 0.7, maxTokens = 2048, enableTools = true, apiKey, language, activeMemberId } = options;
+  const { model: requestedModel = 'gemini-2.5-flash', temperature = 0.7, maxTokens = 2048, enableTools = true, apiKey, language, activeMemberId, visualContext } = options;
 
   // 0. Check daily budget
   const budget = checkDailyBudget();
@@ -354,7 +360,7 @@ export async function callLLM(
   const model = selectModel(lastUserMsg, requestedModel);
 
   // 2. Build context
-  const memoryContext = buildMemoryContext(lastUserMsg, activeMemberId);
+  const memoryContext = buildMemoryContext(lastUserMsg, activeMemberId, visualContext);
   const toolInstructions = enableTools ? getToolInstructions() : '';
 
   // 2.5 Check if active user is a child (for content filtering)

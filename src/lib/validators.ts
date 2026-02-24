@@ -40,6 +40,7 @@ export const chatRequestSchema = z.object({
   messages: z.array(chatMessageSchema).min(1).max(50),
   model: z.string().max(100).optional(),
   language: z.string().max(10).optional(), // "en-US" | "hi-IN" | "mr-IN" etc.
+  visualContext: z.string().max(200).optional(), // Current visual panel state, e.g. "weather card for Fremont"
 });
 
 // ─── Family Routes ───
