@@ -2,7 +2,7 @@
 
 import { memo } from "react";
 import {
-  MicOff, Volume2, Bell, LayoutDashboard, Settings, User,
+  MicOff, Volume2, Bell, LayoutDashboard, Settings, User, Eye, EyeOff,
 } from "lucide-react";
 import Link from "next/link";
 import type { SupportedLanguage } from "@/types/language";
@@ -47,6 +47,9 @@ export const HeaderBar = memo(function HeaderBar({
   identifiedSpeaker,
   sttLanguage,
   isConnected,
+  showVisualPanel,
+  onToggleVisualPanel,
+  hasVisualContext,
 }: HeaderBarProps) {
   return (
     <>
@@ -89,6 +92,20 @@ export const HeaderBar = memo(function HeaderBar({
                 </span>
               )}
             </button>
+
+            {/* Visual panel toggle */}
+            {onToggleVisualPanel && (
+              <button
+                onClick={onToggleVisualPanel}
+                className={`nav-button relative ${showVisualPanel ? 'text-amber-400' : ''}`}
+                title={showVisualPanel ? 'Hide visual panel' : 'Show visual panel'}
+              >
+                {showVisualPanel ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                {hasVisualContext && !showVisualPanel && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+                )}
+              </button>
+            )}
 
             <Link href="/dashboard" className="nav-button" title="Dashboard">
               <LayoutDashboard className="w-4 h-4" />

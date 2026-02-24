@@ -51,6 +51,7 @@ export default function VinegarHome() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showVisualPanel, setShowVisualPanel] = useState(true);
 
   // Real-time notifications (reminders + suggestions)
   const { notifications, unreadCount, dismiss, dismissAll } = useNotifications();
@@ -392,6 +393,10 @@ export default function VinegarHome() {
     setShowNotifications(prev => !prev);
   }, []);
 
+  const toggleVisualPanel = useCallback(() => {
+    setShowVisualPanel(prev => !prev);
+  }, []);
+
   const openSettings = useCallback(() => {
     setShowSettings(true);
   }, []);
@@ -432,10 +437,13 @@ export default function VinegarHome() {
         identifiedSpeaker={identifiedSpeaker}
         sttLanguage={sttLanguage}
         isConnected={isConnected}
+        showVisualPanel={showVisualPanel}
+        onToggleVisualPanel={toggleVisualPanel}
+        hasVisualContext={!!visualContext.context}
       />
 
-      {/* Main Content — split-screen layout on desktop */}
-      <main className="relative z-10 flex-1 flex flex-col lg:flex-row px-4 sm:px-8 overflow-hidden">
+      {/* Main Content — split-screen layout on tablet+ */}
+      <main className="relative z-10 flex-1 flex flex-col md:flex-row px-4 sm:px-8 overflow-hidden">
         {/* Chat Column */}
         <div id="main-chat" className="flex-1 flex flex-col items-center min-w-0">
           <ChatColumn
@@ -471,18 +479,20 @@ export default function VinegarHome() {
           </div>
         </div>
 
-        {/* Visual Context Panel — desktop sidebar */}
-        <div className="hidden lg:block w-80 xl:w-96 flex-shrink-0 sticky top-0 h-[calc(100vh-4rem)]">
-          <ContextPanel
-            context={visualContext.context}
-            isLoading={visualContext.isLoading}
-            error={visualContext.error}
-            onExampleClick={(prompt) => {
-              setTextInput(prompt);
-              inputRef.current?.focus();
-            }}
-          />
-        </div>
+        {/* Visual Context Panel — tablet+ sidebar with toggle */}
+        {showVisualPanel && (
+          <div className="hidden md:block w-72 lg:w-80 xl:w-96 flex-shrink-0 sticky top-0 h-[calc(100vh-4rem)]">
+            <ContextPanel
+              context={visualContext.context}
+              isLoading={visualContext.isLoading}
+              error={visualContext.error}
+              onExampleClick={(prompt) => {
+                setTextInput(prompt);
+                inputRef.current?.focus();
+              }}
+            />
+          </div>
+        )}
       </main>
 
       {/* Mobile visual context bottom sheet (< lg breakpoint) */}

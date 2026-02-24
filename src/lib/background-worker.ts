@@ -123,6 +123,12 @@ const jobs: Job[] = [
         const date = new Date().toISOString().split('T')[0];
         const backupPath = path.join(backupDir, `vinegar-${date}.db`);
 
+        // Skip if today's backup already exists
+        if (fs.existsSync(backupPath)) {
+          console.log(`[Worker] Backup already exists for ${date}, skipping`);
+          return;
+        }
+
         // Use SQLite backup API via VACUUM INTO
         db.exec(`VACUUM INTO '${backupPath.replace(/'/g, "''")}'`);
 

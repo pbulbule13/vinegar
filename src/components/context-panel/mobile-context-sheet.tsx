@@ -70,7 +70,7 @@ export const MobileContextSheet = memo(function MobileContextSheet({
   if (!context || isDismissed || error) return null;
 
   return (
-    <div className="lg:hidden fixed bottom-16 inset-x-0 z-40">
+    <div className="md:hidden fixed bottom-16 inset-x-0 z-40">
       <div
         ref={sheetRef}
         className={`mx-2 bg-charcoal/95 backdrop-blur-xl border border-white/10 rounded-t-2xl transition-all duration-300 ease-out ${
