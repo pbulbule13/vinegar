@@ -21,7 +21,7 @@ export function getToolInstructions(): string {
   return `
 TOOLS: Call tools via \`\`\`tool_call\n{"name":"TOOL","arguments":{...}}\n\`\`\` format. One tool per call. ALWAYS use tools for actions.
 
-Tools: manage_grocery({action,item,quantity,unit,category}), create_event({title,start_time,end_time,description,location,reminder_minutes}), get_calendar({start,end}), update_event({id,title,start_time,end_time}), delete_event({id}), set_reminder({message,time,type,target_member}), manage_task({action,title,priority,status,due_date}), manage_chore({action,title,assigned_to,points}), manage_meals({action,date,meal_type,recipe,ingredients[]}), manage_activity({action,title,child_name,day_of_week[],start_time,end_time,location}), save_memory({topic,content,type,importance}), recall_memory({query,type}), manage_skill({action,name,type,trigger_phrases[],url}), get_family({}), get_usage({period}), get_weather({location}), get_forecast({location,days}), web_search({query}), get_briefing({}), run_workflow({steps:[{tool,args}]}), find_free_time({duration_minutes,preferred_time}), suggest_recipe({dietary_restrictions,cuisine,meal_type,servings}), manage_budget({action,name,amount,category,type,frequency,due_date}), get_traffic({from,to}), find_nearby({query,type,near,radius_miles}), check_deals({store,item,zip_code}), show_visual({query,card_type})
+Tools: manage_grocery({action,item,quantity,unit,category}), create_event({title,start_time,end_time,description,location,reminder_minutes}), get_calendar({start,end}), update_event({id,title,start_time,end_time}), delete_event({id}), set_reminder({message,time,type,target_member}), manage_task({action,title,priority,status,due_date}), manage_chore({action,title,assigned_to,points}), manage_meals({action,date,meal_type,recipe,ingredients[]}), manage_activity({action,title,child_name,day_of_week[],start_time,end_time,location}), save_memory({topic,content,type,importance}), recall_memory({query,type}), manage_skill({action,name,type,trigger_phrases[],url}), get_family({}), get_usage({period}), get_weather({location}), get_forecast({location,days}), web_search({query}), get_briefing({}), run_workflow({steps:[{tool,args}]}), find_free_time({duration_minutes,preferred_time}), suggest_recipe({dietary_restrictions,cuisine,meal_type,servings}), manage_budget({action,name,amount,category,type,frequency,due_date}), get_traffic({from,to}), find_nearby({query,type,near,radius_miles}), check_deals({store,item,zip_code}), show_visual({query,card_type}), manage_routine({action,name,type,steps:[{tool,args}],trigger_time,trigger_phrase}), manage_homework({action,title,subject,child_name,due_date,status,notes})
 `;
 }
 
@@ -261,7 +261,8 @@ export function parseToolCall(content: string): { name: string; arguments: Recor
       'update_event', 'delete_event', 'set_reminder', 'manage_grocery', 'manage_meals',
       'manage_activity', 'manage_chore', 'manage_skill', 'get_family', 'get_usage',
       'get_weather', 'get_forecast', 'web_search', 'get_briefing', 'run_workflow', 'find_free_time',
-      'suggest_recipe', 'manage_budget', 'get_traffic', 'find_nearby', 'check_deals', 'show_visual'];
+      'suggest_recipe', 'manage_budget', 'get_traffic', 'find_nearby', 'check_deals', 'show_visual',
+      'manage_routine', 'manage_homework'];
     if (knownTools.includes(toolName)) {
       const args: Record<string, unknown> = {};
       const kwargRegex = /(\w+)\s*=\s*(?:'([^']*)'|"([^"]*)"|(\[[^\]]*\])|(\{[^}]*\})|([^,\s)]+))/g;

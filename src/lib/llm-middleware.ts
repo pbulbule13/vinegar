@@ -129,24 +129,22 @@ export async function callLLM(
   const memoryContext = buildMemoryContext(lastUserMsg, activeMemberId, visualContext);
   const toolInstructions = enableTools ? getToolInstructions() : '';
 
-  // 2.5 Check if active user is a child (for content filtering)
-  // If activeMemberId is provided (from speaker ID), use it directly.
-  // Fail-closed: if speaker ID was attempted but no match, default to child-safe.
+  // 2.5 Check active user role + load per-user preferences
   let childSafetyAddendum = '';
+  let memberLanguage = language; // fallback to request-level language
   try {
     if (activeMemberId) {
-      // Speaker identified — check their role directly
-      const member = db.prepare("SELECT role FROM family_members WHERE id = ?").get(activeMemberId) as { role: string } | undefined;
+      const member = db.prepare("SELECT role, preferred_language FROM family_members WHERE id = ?").get(activeMemberId) as { role: string; preferred_language: string | null } | undefined;
       if (member?.role === 'child') childSafetyAddendum = CHILD_SAFE_PROMPT;
+      if (member?.preferred_language && !language) memberLanguage = member.preferred_language;
     } else {
-      // No speaker ID — fall back to DB is_active check
       const activeChild = db.prepare("SELECT id FROM family_members WHERE role = 'child' AND is_active = 1 LIMIT 1").get();
       if (activeChild) childSafetyAddendum = CHILD_SAFE_PROMPT;
     }
   } catch {}
 
   // 3. Build system prompt with static content FIRST (for prompt caching)
-  const languagePrompt = language ? getLanguagePrompt(language) : '';
+  const languagePrompt = memberLanguage ? getLanguagePrompt(memberLanguage) : '';
   const voiceBrevity = source === 'voice'
     ? '\n\nCRITICAL: This is a VOICE conversation. You MUST respond in 1-2 SHORT sentences only. No lists, no formatting, no explanations unless asked. Be like a human assistant giving a quick spoken answer.'
     : '';
@@ -228,6 +226,8 @@ export async function callLLM(
               rehydratedArgs[key] = value;
             }
           }
+          // Inject active member ID so tools can personalize per user
+          if (activeMemberId) rehydratedArgs._active_member_id = activeMemberId;
           const toolResult = await executeTool(toolCallParsed.name, rehydratedArgs);
           toolsUsed.push(toolCallParsed.name);
 

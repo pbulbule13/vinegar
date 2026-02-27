@@ -215,7 +215,7 @@ registerTool('set_reminder', 'Create a reminder or alarm', (args) => {
 });
 
 registerTool('get_family', 'List all family members', () => {
-  const members = db.prepare('SELECT id, name, role, age, birthday, voice_profile, is_active FROM family_members ORDER BY role, name').all() as Record<string, unknown>[];
+  const members = db.prepare('SELECT id, name, role, age, birthday, voice_profile, is_active, preferred_language, preferred_tts_speed, preferred_voice FROM family_members ORDER BY role, name').all() as Record<string, unknown>[];
   return {
     success: true,
     data: {
@@ -227,6 +227,9 @@ registerTool('get_family', 'List all family members', () => {
         birthday: m.birthday,
         voiceEnrolled: !!m.voice_profile,
         isActive: !!m.is_active,
+        preferred_language: m.preferred_language || 'en-US',
+        preferred_tts_speed: m.preferred_tts_speed ?? 1.2,
+        preferred_voice: m.preferred_voice || null,
       })),
     },
   };

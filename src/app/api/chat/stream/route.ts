@@ -129,6 +129,11 @@ export async function POST(request: Request) {
           rehydratedArgs[key] = value;
         }
       }
+      // Inject active member ID for per-user tools
+      try {
+        const activeMember = db.prepare("SELECT id FROM family_members WHERE is_active = 1 LIMIT 1").get() as { id: string } | undefined;
+        if (activeMember) rehydratedArgs._active_member_id = activeMember.id;
+      } catch {}
       const result = await executeTool(toolCall.name, rehydratedArgs);
       toolsUsed.push(toolCall.name);
       try { logToolUsage(toolCall.name, toolCall.arguments || {}); } catch {}

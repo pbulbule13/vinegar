@@ -410,6 +410,73 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 9,
+    description: 'Phase 10: per-user preferences, routines, assignments, dismissed_suggestions',
+    up: (db) => {
+      // Per-user preferences on family_members
+      const addCol = (col: string, def: string) => {
+        const exists = db.prepare(
+          `SELECT COUNT(*) as c FROM pragma_table_info('family_members') WHERE name=?`
+        ).get(col) as { c: number };
+        if (exists.c === 0) db.exec(`ALTER TABLE family_members ADD COLUMN ${col} ${def}`);
+      };
+      addCol('preferred_language', "TEXT DEFAULT 'en-US'");
+      addCol('preferred_tts_speed', 'REAL DEFAULT 1.2');
+      addCol('preferred_voice', 'TEXT');
+
+      // Routines table (morning/night/custom)
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS routines (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          type TEXT NOT NULL CHECK(type IN ('morning','night','custom')),
+          steps TEXT NOT NULL,
+          trigger_time TEXT,
+          trigger_phrase TEXT,
+          family_member_id TEXT,
+          is_active INTEGER DEFAULT 1,
+          created_at INTEGER DEFAULT (unixepoch()),
+          updated_at INTEGER DEFAULT (unixepoch()),
+          FOREIGN KEY (family_member_id) REFERENCES family_members(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_routines_type ON routines(type);
+        CREATE INDEX IF NOT EXISTS idx_routines_member ON routines(family_member_id);
+      `);
+
+      // Assignments table (homework/projects for kids)
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS assignments (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          subject TEXT,
+          child_id TEXT,
+          due_date INTEGER,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','in_progress','completed','overdue')),
+          notes TEXT,
+          created_at INTEGER DEFAULT (unixepoch()),
+          updated_at INTEGER DEFAULT (unixepoch()),
+          FOREIGN KEY (child_id) REFERENCES family_members(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_assignments_child ON assignments(child_id);
+        CREATE INDEX IF NOT EXISTS idx_assignments_due ON assignments(due_date);
+        CREATE INDEX IF NOT EXISTS idx_assignments_status ON assignments(status);
+      `);
+
+      // Dismissed suggestions table (for smarter engine)
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS dismissed_suggestions (
+          id TEXT PRIMARY KEY,
+          suggestion_type TEXT NOT NULL,
+          suggestion_message TEXT NOT NULL,
+          family_member_id TEXT,
+          dismissed_at INTEGER DEFAULT (unixepoch()),
+          FOREIGN KEY (family_member_id) REFERENCES family_members(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_dismissed_member ON dismissed_suggestions(family_member_id);
+      `);
+    },
+  },
 ];
 
 export function runMigrations(): void {

@@ -261,8 +261,8 @@ async function executeSkill(skill: { id: string; name: string; type: string; con
 
 // save_memory
 registerTool('save_memory', 'Save information to persistent memory', (args) => {
-  const { topic, content, type = 'fact', importance = 'medium', tags } = args as {
-    topic: string; content: string; type?: string; importance?: string; tags?: string[];
+  const { topic, content, type = 'fact', importance = 'medium', tags, _active_member_id } = args as {
+    topic: string; content: string; type?: string; importance?: string; tags?: string[]; _active_member_id?: string;
   };
 
   if (!topic || !content) return { success: false, error: 'topic and content required' };
@@ -274,13 +274,13 @@ registerTool('save_memory', 'Save information to persistent memory', (args) => {
   const existing = db.prepare('SELECT id FROM memories WHERE topic = ? AND type = ? COLLATE NOCASE').get(topic, type) as { id: string } | undefined;
 
   if (existing) {
-    db.prepare('UPDATE memories SET content = ?, importance = ?, tags = ?, access_count = access_count + 1, last_accessed = unixepoch(), updated_at = unixepoch() WHERE id = ?')
-      .run(content, importance, tagsJson, existing.id);
+    db.prepare('UPDATE memories SET content = ?, importance = ?, tags = ?, family_member_id = COALESCE(?, family_member_id), access_count = access_count + 1, last_accessed = unixepoch(), updated_at = unixepoch() WHERE id = ?')
+      .run(content, importance, tagsJson, _active_member_id || null, existing.id);
     return { success: true, data: { id: existing.id }, message: `Updated memory: ${topic}` };
   }
 
-  db.prepare('INSERT INTO memories (id, topic, content, type, importance, tags, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())')
-    .run(id, topic, content, type, importance, tagsJson);
+  db.prepare('INSERT INTO memories (id, topic, content, type, importance, tags, family_member_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())')
+    .run(id, topic, content, type, importance, tagsJson, _active_member_id || null);
 
   vinegarEvents.emit('memory:saved', { id, topic, type });
   return { success: true, data: { id }, message: `Saved: ${topic}` };
@@ -288,22 +288,35 @@ registerTool('save_memory', 'Save information to persistent memory', (args) => {
 
 // recall_memory
 registerTool('recall_memory', 'Search memory for previously saved info', (args) => {
-  const { query, type } = args as { query?: string; type?: string };
+  const { query, type, _active_member_id } = args as { query?: string; type?: string; _active_member_id?: string };
+
+  // Prioritize active member's memories, then shared (null family_member_id)
+  const memberOrder = _active_member_id
+    ? `, CASE WHEN family_member_id = '${_active_member_id}' THEN 0 WHEN family_member_id IS NULL THEN 1 ELSE 2 END`
+    : '';
 
   let results;
   if (query) {
     const q = `%${query}%`;
     results = db.prepare(`
-      SELECT topic, content, type, importance, created_at FROM memories
+      SELECT topic, content, type, importance, family_member_id, created_at FROM memories
       WHERE (content LIKE ? OR topic LIKE ? OR tags LIKE ?)
       ${type ? 'AND type = ?' : ''}
-      ORDER BY importance DESC, created_at DESC
+      ${_active_member_id ? `AND (family_member_id = ? OR family_member_id IS NULL)` : ''}
+      ORDER BY importance DESC${memberOrder}, created_at DESC
       LIMIT 10
-    `).all(...(type ? [q, q, q, type] : [q, q, q]));
+    `).all(...(type
+      ? (_active_member_id ? [q, q, q, type, _active_member_id] : [q, q, q, type])
+      : (_active_member_id ? [q, q, q, _active_member_id] : [q, q, q])
+    ));
   } else if (type) {
-    results = db.prepare('SELECT topic, content, type, importance, created_at FROM memories WHERE type = ? ORDER BY created_at DESC LIMIT 10').all(type);
+    results = _active_member_id
+      ? db.prepare(`SELECT topic, content, type, importance, family_member_id, created_at FROM memories WHERE type = ? AND (family_member_id = ? OR family_member_id IS NULL) ORDER BY created_at DESC LIMIT 10`).all(type, _active_member_id)
+      : db.prepare('SELECT topic, content, type, importance, family_member_id, created_at FROM memories WHERE type = ? ORDER BY created_at DESC LIMIT 10').all(type);
   } else {
-    results = db.prepare('SELECT topic, content, type, importance, created_at FROM memories ORDER BY created_at DESC LIMIT 10').all();
+    results = _active_member_id
+      ? db.prepare(`SELECT topic, content, type, importance, family_member_id, created_at FROM memories WHERE family_member_id = ? OR family_member_id IS NULL ORDER BY created_at DESC LIMIT 10`).all(_active_member_id)
+      : db.prepare('SELECT topic, content, type, importance, family_member_id, created_at FROM memories ORDER BY created_at DESC LIMIT 10').all();
   }
 
   // Update access counts
@@ -369,6 +382,189 @@ registerTool('manage_task', 'Create, update, or list tasks', (args) => {
             LIMIT 20
           `).all();
       return { success: true, data: { count: (tasks as unknown[]).length, tasks } };
+    }
+  }
+});
+
+// ─── Homework/Assignment Tool ───
+
+registerTool('manage_homework', 'Track homework and assignments for kids. Use for "add homework", "what homework is due", "mark assignment done", "homework list".', (args) => {
+  const { action = 'list', title, subject, child_name, due_date, status, notes, id, _active_member_id } = args as {
+    action?: string; title?: string; subject?: string; child_name?: string; due_date?: string;
+    status?: string; notes?: string; id?: string; _active_member_id?: string;
+  };
+
+  switch (action) {
+    case 'add': {
+      if (!title) return { success: false, error: 'title required' };
+
+      let childId: string | null = null;
+      if (child_name) {
+        const member = db.prepare("SELECT id FROM family_members WHERE name LIKE ? AND role = 'child'").get(`%${child_name}%`) as { id: string } | undefined;
+        childId = member?.id || null;
+      } else if (_active_member_id) {
+        // If speaker is a child, auto-assign
+        const active = db.prepare("SELECT id, role FROM family_members WHERE id = ?").get(_active_member_id) as { id: string; role: string } | undefined;
+        if (active?.role === 'child') childId = active.id;
+      }
+
+      let dueTs: number | null = null;
+      if (due_date) {
+        dueTs = Math.floor(new Date(due_date).getTime() / 1000);
+        if (isNaN(dueTs)) return { success: false, error: 'Invalid due_date format' };
+      }
+
+      const assignId = generateId('hw');
+      db.prepare(`
+        INSERT INTO assignments (id, title, subject, child_id, due_date, notes, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())
+      `).run(assignId, title, subject || null, childId, dueTs, notes || null);
+
+      // Auto-create reminder 1 day before if due date is set
+      if (dueTs) {
+        const remId = generateId('rem');
+        db.prepare(`INSERT INTO scheduled_reminders (id, type, message, next_fire_time, source_type, source_id) VALUES (?, 'one_time', ?, ?, 'homework', ?)`)
+          .run(remId, `Homework due tomorrow: ${title}${subject ? ` (${subject})` : ''}`, dueTs - 86400, assignId);
+      }
+
+      return { success: true, data: { id: assignId }, message: `Assignment added: ${title}${subject ? ` (${subject})` : ''}${due_date ? ` — due ${due_date}` : ''}` };
+    }
+
+    case 'update': {
+      const hw = id
+        ? db.prepare('SELECT id, title FROM assignments WHERE id = ?').get(id)
+        : title ? db.prepare('SELECT id, title FROM assignments WHERE title LIKE ?').get(`%${title}%`) : null;
+
+      if (!hw) return { success: false, error: `Assignment not found: ${title || id}` };
+      const assignment = hw as { id: string; title: string };
+
+      const updates: string[] = [];
+      const values: unknown[] = [];
+      if (status) { updates.push('status = ?'); values.push(status); }
+      if (notes) { updates.push('notes = ?'); values.push(notes); }
+      if (subject) { updates.push('subject = ?'); values.push(subject); }
+      if (due_date) {
+        const ts = Math.floor(new Date(due_date).getTime() / 1000);
+        if (!isNaN(ts)) { updates.push('due_date = ?'); values.push(ts); }
+      }
+      updates.push('updated_at = unixepoch()');
+      values.push(assignment.id);
+
+      db.prepare(`UPDATE assignments SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+      return { success: true, message: `Updated: ${assignment.title} → ${status || 'updated'}` };
+    }
+
+    case 'delete': {
+      if (!id && !title) return { success: false, error: 'id or title required' };
+      if (id) db.prepare('DELETE FROM assignments WHERE id = ?').run(id);
+      else db.prepare('DELETE FROM assignments WHERE title LIKE ?').run(`%${title}%`);
+      return { success: true, message: 'Assignment deleted' };
+    }
+
+    case 'list':
+    default: {
+      let query = `SELECT a.id, a.title, a.subject, a.due_date, a.status, a.notes, f.name as child_name
+        FROM assignments a LEFT JOIN family_members f ON a.child_id = f.id
+        WHERE a.status != 'completed'`;
+      const params: unknown[] = [];
+
+      if (child_name) {
+        const member = db.prepare("SELECT id FROM family_members WHERE name LIKE ?").get(`%${child_name}%`) as { id: string } | undefined;
+        if (member) { query += ' AND a.child_id = ?'; params.push(member.id); }
+      } else if (_active_member_id) {
+        // If active speaker is a child, show only their homework
+        const active = db.prepare("SELECT role FROM family_members WHERE id = ?").get(_active_member_id) as { role: string } | undefined;
+        if (active?.role === 'child') { query += ' AND a.child_id = ?'; params.push(_active_member_id); }
+      }
+
+      query += ' ORDER BY a.due_date ASC NULLS LAST, a.created_at DESC LIMIT 20';
+      const assignments = db.prepare(query).all(...params) as Array<{ id: string; title: string; subject: string; due_date: number | null; status: string; child_name: string }>;
+
+      // Auto-mark overdue
+      const now = Math.floor(Date.now() / 1000);
+      for (const a of assignments) {
+        if (a.due_date && a.due_date < now && a.status === 'pending') {
+          db.prepare("UPDATE assignments SET status = 'overdue', updated_at = unixepoch() WHERE id = ?").run(a.id);
+          a.status = 'overdue';
+        }
+      }
+
+      const summary = assignments.map(a => {
+        const due = a.due_date ? new Date(a.due_date * 1000).toLocaleDateString() : 'no due date';
+        return `[${a.status}] ${a.title}${a.subject ? ` (${a.subject})` : ''} — ${a.child_name || 'unassigned'} — ${due}`;
+      }).join('\n');
+
+      return {
+        success: true,
+        data: { count: assignments.length, assignments },
+        message: assignments.length > 0 ? `${assignments.length} assignment${assignments.length > 1 ? 's' : ''}:\n${summary}` : 'No pending assignments.',
+      };
+    }
+  }
+});
+
+// ─── Routine Tool ───
+
+registerTool('manage_routine', 'Create, list, run, or delete morning/night/custom routines. A routine chains multiple tools in sequence. Use for "create a morning routine", "run my night routine", "my routines".', async (args) => {
+  const { action = 'list', name, type = 'custom', steps, trigger_time, trigger_phrase, id, _active_member_id } = args as {
+    action?: string; name?: string; type?: string; steps?: Array<{ tool: string; args?: Record<string, unknown> }>;
+    trigger_time?: string; trigger_phrase?: string; id?: string; _active_member_id?: string;
+  };
+
+  switch (action) {
+    case 'create': {
+      if (!name) return { success: false, error: 'name required' };
+      if (!steps || !Array.isArray(steps) || steps.length === 0) return { success: false, error: 'steps array required' };
+      if (steps.length > 10) return { success: false, error: 'Max 10 steps per routine' };
+
+      const validTypes = ['morning', 'night', 'custom'];
+      const routineType = validTypes.includes(type) ? type : 'custom';
+      const routineId = generateId('rtn');
+
+      db.prepare(`
+        INSERT INTO routines (id, name, type, steps, trigger_time, trigger_phrase, family_member_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())
+      `).run(routineId, name, routineType, JSON.stringify(steps), trigger_time || null, trigger_phrase || null, _active_member_id || null);
+
+      return { success: true, data: { id: routineId }, message: `Routine "${name}" created with ${steps.length} steps` };
+    }
+
+    case 'run': {
+      // Find routine by id or name
+      const routine = id
+        ? db.prepare('SELECT id, name, steps FROM routines WHERE id = ? AND is_active = 1').get(id)
+        : name ? db.prepare('SELECT id, name, steps FROM routines WHERE name LIKE ? AND is_active = 1').get(`%${name}%`) : null;
+
+      if (!routine) return { success: false, error: `Routine not found: ${name || id}` };
+      const r = routine as { id: string; name: string; steps: string };
+      const routineSteps = JSON.parse(r.steps) as Array<{ tool: string; args?: Record<string, unknown> }>;
+
+      const results: Array<{ tool: string; message?: string; success: boolean }> = [];
+      for (const step of routineSteps) {
+        if (!step.tool) continue;
+        const stepArgs = { ...(step.args || {}) };
+        if (_active_member_id) stepArgs._active_member_id = _active_member_id;
+        const result = await executeTool(step.tool, stepArgs);
+        results.push({ tool: step.tool, message: result.message, success: result.success });
+      }
+
+      const summary = results.map(r => `${r.success ? '✓' : '✗'} ${r.tool}: ${r.message || 'done'}`).join('\n');
+      return { success: true, data: { routine: r.name, results }, message: `Routine "${r.name}" complete:\n${summary}` };
+    }
+
+    case 'delete': {
+      if (!id && !name) return { success: false, error: 'id or name required' };
+      if (id) db.prepare('DELETE FROM routines WHERE id = ?').run(id);
+      else db.prepare('DELETE FROM routines WHERE name LIKE ?').run(`%${name}%`);
+      return { success: true, message: 'Routine deleted' };
+    }
+
+    case 'list':
+    default: {
+      const memberFilter = _active_member_id
+        ? db.prepare('SELECT id, name, type, trigger_time, trigger_phrase, is_active FROM routines WHERE family_member_id = ? OR family_member_id IS NULL ORDER BY type, name').all(_active_member_id)
+        : db.prepare('SELECT id, name, type, trigger_time, trigger_phrase, is_active FROM routines ORDER BY type, name').all();
+      return { success: true, data: { routines: memberFilter } };
     }
   }
 });
@@ -920,7 +1116,7 @@ export function getToolSchemas(): Array<{ type: string; name: string; descriptio
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', description: 'add, paid, list, upcoming, delete, or summary' },
+          action: { type: 'string', description: 'add, paid, list, upcoming, delete, summary, or analytics' },
           name: { type: 'string', description: 'Bill/expense name' },
           amount: { type: 'number', description: 'Amount in dollars' },
           category: { type: 'string', description: 'Category (utilities, food, entertainment, etc.)' },
@@ -993,6 +1189,39 @@ export function getToolSchemas(): Array<{ type: string; name: string; descriptio
           card_type: { type: 'string', description: 'Card type: weather, place, recipe, traffic, or image-only (default)' },
         },
         required: ['query'],
+      },
+    },
+    {
+      type: 'function',
+      name: 'manage_routine',
+      description: 'Create, list, run, or delete morning/night/custom routines that chain multiple tools. Use for "morning routine", "bedtime routine", "run my routine".',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', description: 'create, run, list, or delete' },
+          name: { type: 'string', description: 'Routine name (e.g., "Morning Routine")' },
+          type: { type: 'string', description: 'morning, night, or custom' },
+          steps: { type: 'array', description: 'Array of {tool, args} objects to run in sequence', items: { type: 'object' } },
+          trigger_time: { type: 'string', description: 'Time to auto-trigger (HH:MM format)' },
+          trigger_phrase: { type: 'string', description: 'Voice phrase to trigger (e.g., "good morning")' },
+        },
+      },
+    },
+    {
+      type: 'function',
+      name: 'manage_homework',
+      description: 'Track homework and assignments for kids. Use for "add homework", "what homework is due", "mark assignment done".',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', description: 'add, update, list, or delete' },
+          title: { type: 'string', description: 'Assignment title' },
+          subject: { type: 'string', description: 'Subject (Math, Science, English, etc.)' },
+          child_name: { type: 'string', description: 'Child name' },
+          due_date: { type: 'string', description: 'Due date (ISO format)' },
+          status: { type: 'string', description: 'pending, in_progress, completed, or overdue' },
+          notes: { type: 'string', description: 'Additional notes' },
+        },
       },
     },
   ];

@@ -2,13 +2,14 @@
  * Proactive Suggestion Engine
  * Analyzes usage patterns and context to generate helpful suggestions.
  * Runs as a background job every 30 minutes.
+ * Tracks dismissals per-user to avoid repeating unhelpful suggestions.
  */
 
 import { db, generateId } from './db';
 
 export interface Suggestion {
   id: string;
-  type: 'reminder' | 'task' | 'grocery' | 'weather' | 'calendar' | 'habit';
+  type: 'reminder' | 'task' | 'grocery' | 'weather' | 'calendar' | 'habit' | 'homework' | 'routine';
   message: string;
   priority: 'high' | 'medium' | 'low';
   action?: string; // Tool call to execute if user accepts
@@ -19,6 +20,29 @@ export interface Suggestion {
 const activeSuggestions: Suggestion[] = [];
 const MAX_SUGGESTIONS = 10;
 
+// Cache recently dismissed message patterns to avoid DB round-trips
+let dismissedPatternsCache: Set<string> | null = null;
+let dismissedCacheTimestamp = 0;
+const DISMISSED_CACHE_TTL = 5 * 60 * 1000; // 5 min
+
+function getDismissedPatterns(): Set<string> {
+  const now = Date.now();
+  if (dismissedPatternsCache && now - dismissedCacheTimestamp < DISMISSED_CACHE_TTL) {
+    return dismissedPatternsCache;
+  }
+  try {
+    // Load dismissals from last 7 days
+    const sevenDaysAgo = Math.floor(now / 1000) - (7 * 86400);
+    const rows = db.prepare('SELECT suggestion_message FROM dismissed_suggestions WHERE dismissed_at > ? LIMIT 200').all(sevenDaysAgo) as Array<{ suggestion_message: string }>;
+    dismissedPatternsCache = new Set(rows.map(r => r.suggestion_message));
+    dismissedCacheTimestamp = now;
+  } catch {
+    dismissedPatternsCache = new Set();
+    dismissedCacheTimestamp = now;
+  }
+  return dismissedPatternsCache;
+}
+
 export function getActiveSuggestions(): Suggestion[] {
   return activeSuggestions.filter(s => {
     // Expire after 2 hours
@@ -27,6 +51,18 @@ export function getActiveSuggestions(): Suggestion[] {
 }
 
 export function dismissSuggestion(id: string): void {
+  const suggestion = activeSuggestions.find(s => s.id === id);
+  if (suggestion) {
+    // Track dismissal in DB for learning
+    try {
+      const activeMember = db.prepare("SELECT id FROM family_members WHERE is_active = 1 LIMIT 1").get() as { id: string } | undefined;
+      db.prepare('INSERT INTO dismissed_suggestions (id, suggestion_type, suggestion_message, family_member_id) VALUES (?, ?, ?, ?)').run(
+        generateId('dis'), suggestion.type, suggestion.message, activeMember?.id || null
+      );
+      // Invalidate cache
+      dismissedPatternsCache = null;
+    } catch {}
+  }
   const idx = activeSuggestions.findIndex(s => s.id === id);
   if (idx >= 0) activeSuggestions.splice(idx, 1);
 }
@@ -34,6 +70,10 @@ export function dismissSuggestion(id: string): void {
 function addSuggestion(type: Suggestion['type'], message: string, priority: Suggestion['priority'], action?: string): void {
   // Don't duplicate
   if (activeSuggestions.some(s => s.message === message)) return;
+
+  // Don't show previously dismissed suggestions
+  const dismissed = getDismissedPatterns();
+  if (dismissed.has(message)) return;
 
   // Evict oldest if at capacity
   if (activeSuggestions.length >= MAX_SUGGESTIONS) {
@@ -174,6 +214,46 @@ function checkUpcomingBills(): void {
   } catch {}
 }
 
+function checkHomeworkDue(): void {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const twoDays = now + (2 * 86400);
+
+    const assignments = db.prepare(`
+      SELECT a.title, a.subject, a.due_date, f.name as child_name FROM assignments a
+      LEFT JOIN family_members f ON a.child_id = f.id
+      WHERE a.status = 'pending' AND a.due_date IS NOT NULL AND a.due_date BETWEEN ? AND ?
+      LIMIT 5
+    `).all(now, twoDays) as Array<{ title: string; subject: string; due_date: number; child_name: string }>;
+
+    for (const a of assignments) {
+      const daysUntil = Math.ceil((a.due_date - now) / 86400);
+      const urgency = daysUntil <= 1 ? 'high' : 'medium';
+      addSuggestion('homework', `${a.child_name}'s ${a.subject} assignment "${a.title}" is due ${daysUntil === 0 ? 'today' : `in ${daysUntil} day${daysUntil > 1 ? 's' : ''}`}.`, urgency);
+    }
+  } catch {}
+}
+
+function checkRoutineTime(): void {
+  try {
+    const hour = new Date().getHours();
+    const minute = new Date().getMinutes();
+    const currentTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+
+    // Check for routines that should trigger around this time (±30 min)
+    const routines = db.prepare('SELECT name, type, trigger_time FROM routines WHERE is_active = 1 AND trigger_time IS NOT NULL').all() as Array<{ name: string; type: string; trigger_time: string }>;
+
+    for (const r of routines) {
+      const [rh, rm] = r.trigger_time.split(':').map(Number);
+      const routineMin = rh * 60 + rm;
+      const currentMin = hour * 60 + minute;
+      if (Math.abs(routineMin - currentMin) <= 30) {
+        addSuggestion('routine', `Time for your ${r.type} routine "${r.name}". Want me to run it?`, 'medium', `manage_routine({action:"run",name:"${r.name}"})`);
+      }
+    }
+  } catch {}
+}
+
 // ─── Main scan function (called by background worker) ───
 
 export function scanForSuggestions(): void {
@@ -183,4 +263,6 @@ export function scanForSuggestions(): void {
   checkPendingChores();
   checkWeatherAlerts();
   checkUpcomingBills();
+  checkHomeworkDue();
+  checkRoutineTime();
 }
