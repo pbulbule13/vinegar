@@ -15,9 +15,10 @@ import { redact, rehydrate } from './pii-redactor';
 import { VINEGAR_SYSTEM_PROMPT, CHILD_SAFE_PROMPT, getLanguagePrompt } from './vinegar-context';
 import { executeTool, getToolSchemas } from './tool-executor';
 import { checkDailyBudget, trimToFit, selectModel } from './token-budget';
-import { logToolUsage } from './episodes';
+import { logToolUsage, trackSessionMessage, detectAndLogCorrection } from './episodes';
 import { logConversation } from './conversation-logger';
 import { buildMemoryContext, getToolInstructions, parseToolCall } from './prompt-builder';
+import { withRetry } from './error-utils';
 
 const EURI_BASE_URL = process.env.EURI_BASE_URL || 'https://api.euron.one/api/v1/euri';
 const REQUEST_TIMEOUT_MS = 30000;
@@ -180,29 +181,37 @@ export async function callLLM(
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
-      const res = await fetch(`${EURI_BASE_URL}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model,
-          messages: currentMessages,
-          temperature,
-          max_tokens: maxTokens,
-        }),
-        signal: controller.signal,
-      });
+      const data = await withRetry(async () => {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+        try {
+          const res = await fetch(`${EURI_BASE_URL}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              model,
+              messages: currentMessages,
+              temperature,
+              max_tokens: maxTokens,
+            }),
+            signal: ctrl.signal,
+          });
+          clearTimeout(t);
+          if (!res.ok) {
+            const errorText = await res.text();
+            throw new Error(`Euri API error (${res.status}): ${errorText}`);
+          }
+          return await res.json();
+        } catch (err) {
+          clearTimeout(t);
+          throw err;
+        }
+      }, { maxRetries: 1, baseDelayMs: 1000 });
 
       clearTimeout(timeout);
-
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`Euri API error (${res.status}): ${errorText}`);
-      }
-
-      const data = await res.json();
       finalUsage = data.usage;
 
       let content = data.choices?.[0]?.message?.content || '';
@@ -318,6 +327,15 @@ export async function callLLM(
     tokensOut: finalUsage?.completion_tokens || 0,
     familyMemberId: activeMemberId,
   });
+
+  // Track session message count for auto-summarization
+  try { trackSessionMessage(activeMemberId); } catch {}
+
+  // Detect user corrections and log them as episodes
+  try {
+    const previousAssistantMsg = [...messages].reverse().find(m => m.role === 'assistant')?.content || '';
+    detectAndLogCorrection(lastUserMsg, previousAssistantMsg, activeMemberId);
+  } catch {}
 
   const result: LLMResult = {
     content: finalContent,

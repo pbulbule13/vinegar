@@ -328,42 +328,94 @@ registerTool('save_memory', 'Save information to persistent memory', (args) => {
   return { success: true, data: { id }, message: `Saved: ${topic}` };
 });
 
-// recall_memory
+// recall_memory — hybrid scoring: keyword match + importance + recency + access frequency
 registerTool('recall_memory', 'Search memory for previously saved info', (args) => {
   const { query, type, _active_member_id } = args as { query?: string; type?: string; _active_member_id?: string };
 
-  // Prioritize active member's memories, then shared (null family_member_id)
-  const memberOrder = _active_member_id
-    ? `, CASE WHEN family_member_id = '${_active_member_id}' THEN 0 WHEN family_member_id IS NULL THEN 1 ELSE 2 END`
-    : '';
+  // Build hybrid-scored query with composite ranking
+  // Score = keyword_match_boost + importance_weight + recency_decay + access_frequency + member_affinity
+  const now = Math.floor(Date.now() / 1000);
+  const memberFilter = _active_member_id ? `AND (family_member_id = ? OR family_member_id IS NULL)` : '';
+  const typeFilter = type ? `AND type = ?` : '';
 
-  let results;
+  let results: unknown[];
   if (query) {
     const q = `%${query}%`;
+    // Split query into words for multi-word matching
+    const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+
     results = db.prepare(`
-      SELECT topic, content, type, importance, family_member_id, created_at FROM memories
+      SELECT topic, content, type, importance, family_member_id, created_at, access_count,
+        (
+          -- Keyword relevance (topic match worth more than content match)
+          CASE WHEN LOWER(topic) LIKE LOWER(?) THEN 30 ELSE 0 END
+          + CASE WHEN LOWER(content) LIKE LOWER(?) THEN 20 ELSE 0 END
+          + CASE WHEN LOWER(tags) LIKE LOWER(?) THEN 10 ELSE 0 END
+          -- Importance weight
+          + CASE importance WHEN 'high' THEN 25 WHEN 'medium' THEN 15 WHEN 'low' THEN 5 END
+          -- Recency decay: full score within 24h, half at 7d, quarter at 30d
+          + CAST(30.0 * MAX(0, 1.0 - (${now} - created_at) / (30.0 * 86400)) AS INTEGER)
+          -- Access frequency bonus (capped at 15)
+          + MIN(15, COALESCE(access_count, 0) * 3)
+          -- Member affinity
+          ${_active_member_id ? `+ CASE WHEN family_member_id = ? THEN 20 WHEN family_member_id IS NULL THEN 10 ELSE 0 END` : ''}
+        ) as score
+      FROM memories
       WHERE (content LIKE ? OR topic LIKE ? OR tags LIKE ?)
-      ${type ? 'AND type = ?' : ''}
-      ${_active_member_id ? `AND (family_member_id = ? OR family_member_id IS NULL)` : ''}
-      ORDER BY importance DESC${memberOrder}, created_at DESC
+      ${typeFilter} ${memberFilter}
+      ORDER BY score DESC, created_at DESC
       LIMIT 10
-    `).all(...(type
-      ? (_active_member_id ? [q, q, q, type, _active_member_id] : [q, q, q, type])
-      : (_active_member_id ? [q, q, q, _active_member_id] : [q, q, q])
-    ));
+    `).all(
+      ...[q, q, q],
+      ...(_active_member_id ? [_active_member_id] : []),
+      ...[q, q, q],
+      ...(type ? [type] : []),
+      ...(_active_member_id ? [_active_member_id] : [])
+    );
+
+    // Bonus: if query has multiple words, also try individual word matches
+    if (words.length > 1 && (results as unknown[]).length < 5) {
+      for (const word of words.slice(0, 3)) {
+        const wq = `%${word}%`;
+        const extra = db.prepare(`
+          SELECT topic, content, type, importance, family_member_id, created_at, access_count, 5 as score
+          FROM memories WHERE (content LIKE ? OR topic LIKE ?)
+          ${typeFilter} ${memberFilter}
+          ORDER BY created_at DESC LIMIT 3
+        `).all(
+          ...[wq, wq],
+          ...(type ? [type] : []),
+          ...(_active_member_id ? [_active_member_id] : [])
+        );
+        // Deduplicate by content
+        const existingContent = new Set((results as Array<{ content: string }>).map(r => r.content));
+        for (const e of extra as Array<{ content: string }>) {
+          if (!existingContent.has(e.content)) {
+            (results as unknown[]).push(e);
+            existingContent.add(e.content);
+          }
+        }
+      }
+    }
   } else if (type) {
-    results = _active_member_id
-      ? db.prepare(`SELECT topic, content, type, importance, family_member_id, created_at FROM memories WHERE type = ? AND (family_member_id = ? OR family_member_id IS NULL) ORDER BY created_at DESC LIMIT 10`).all(type, _active_member_id)
-      : db.prepare('SELECT topic, content, type, importance, family_member_id, created_at FROM memories WHERE type = ? ORDER BY created_at DESC LIMIT 10').all(type);
+    results = db.prepare(`
+      SELECT topic, content, type, importance, family_member_id, created_at, access_count
+      FROM memories WHERE type = ? ${memberFilter}
+      ORDER BY CASE importance WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, created_at DESC LIMIT 10
+    `).all(...[type], ...(_active_member_id ? [_active_member_id] : []));
   } else {
-    results = _active_member_id
-      ? db.prepare(`SELECT topic, content, type, importance, family_member_id, created_at FROM memories WHERE family_member_id = ? OR family_member_id IS NULL ORDER BY created_at DESC LIMIT 10`).all(_active_member_id)
-      : db.prepare('SELECT topic, content, type, importance, family_member_id, created_at FROM memories ORDER BY created_at DESC LIMIT 10').all();
+    results = db.prepare(`
+      SELECT topic, content, type, importance, family_member_id, created_at, access_count
+      FROM memories ${_active_member_id ? 'WHERE family_member_id = ? OR family_member_id IS NULL' : ''}
+      ORDER BY CASE importance WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, created_at DESC LIMIT 10
+    `).all(...(_active_member_id ? [_active_member_id] : []));
   }
 
-  // Update access counts
+  // Update access counts for matched memories
   if (query) {
-    db.prepare(`UPDATE memories SET access_count = access_count + 1, last_accessed = unixepoch() WHERE content LIKE ? OR topic LIKE ?`).run(`%${query}%`, `%${query}%`);
+    try {
+      db.prepare(`UPDATE memories SET access_count = access_count + 1, last_accessed = unixepoch() WHERE content LIKE ? OR topic LIKE ?`).run(`%${query}%`, `%${query}%`);
+    } catch {}
   }
 
   return { success: true, data: { count: (results as unknown[]).length, memories: results } };

@@ -6,6 +6,7 @@
 
 import { db } from './db';
 import { getRecentConversations } from './conversation-logger';
+import { getEpisodeContext } from './episodes';
 
 // ─── Context Sanitization ───
 
@@ -301,6 +302,12 @@ export function buildMemoryContext(
         recentPairs.forEach(p => sections.push(`- ${p}`));
       }
     }
+  } catch {}
+
+  // Inject episodic memory context (session summaries, patterns, corrections)
+  try {
+    const episodeCtx = getEpisodeContext(activeMemberId);
+    if (episodeCtx) sections.push(episodeCtx);
   } catch {}
 
   // Inject visual panel state so LLM can reference what the user sees

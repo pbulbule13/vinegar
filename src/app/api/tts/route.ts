@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { sanitizeForExternal } from "@/lib/pii-redactor";
+import { splitIntoChunks, cleanForSpeech } from "@/lib/tts-utils";
 
 /**
  * TTS endpoint - FALLBACK ONLY. Primary TTS is client-side SpeechSynthesis.
@@ -13,18 +14,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "text required" }, { status: 400 });
     }
 
-    // Clean text for TTS - remove markdown, special chars
-    let cleanText = text
-      .replace(/```[\s\S]*?```/g, " code block ")  // code blocks
-      .replace(/\*\*([^*]+)\*\*/g, "$1")            // bold
-      .replace(/\*([^*]+)\*/g, "$1")                 // italic
-      .replace(/#+\s/g, "")                           // headers
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")       // links
-      .replace(/[`~|>]/g, "")                         // misc markdown
-      .replace(/\n+/g, ". ")                           // newlines to pauses
-      .replace(/\s+/g, " ")                            // collapse whitespace
-      .trim()
-      .slice(0, 500);                                  // limit length
+    // Clean text for TTS using shared utility
+    let cleanText = cleanForSpeech(text, 500);
 
     if (!cleanText) {
       return NextResponse.json({ error: "No speakable text" }, { status: 400 });
@@ -98,27 +89,4 @@ export async function POST(request: Request) {
   }
 }
 
-function splitIntoChunks(text: string, maxLen: number): string[] {
-  if (text.length <= maxLen) return [text];
-
-  const chunks: string[] = [];
-  let remaining = text;
-
-  while (remaining.length > 0) {
-    if (remaining.length <= maxLen) {
-      chunks.push(remaining);
-      break;
-    }
-
-    // Find a good break point
-    let breakAt = remaining.lastIndexOf(". ", maxLen);
-    if (breakAt < maxLen * 0.4) breakAt = remaining.lastIndexOf(", ", maxLen);
-    if (breakAt < maxLen * 0.4) breakAt = remaining.lastIndexOf(" ", maxLen);
-    if (breakAt < maxLen * 0.4) breakAt = maxLen;
-
-    chunks.push(remaining.substring(0, breakAt + 1).trim());
-    remaining = remaining.substring(breakAt + 1).trim();
-  }
-
-  return chunks.filter(c => c.length > 0);
-}
+// splitIntoChunks imported from @/lib/tts-utils

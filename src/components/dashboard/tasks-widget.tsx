@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { ListTodo, CheckCircle2, AlertTriangle } from "lucide-react";
+import { ListTodo, CheckCircle2, AlertTriangle, PartyPopper } from "lucide-react";
+import { SkeletonList, EmptyState } from "@/components/ui/skeleton";
 
 interface Task {
   id: string;
@@ -51,10 +52,10 @@ export function TasksWidget() {
   const overdue = pendingTasks.filter(t => t.due_date && t.due_date < now);
 
   return (
-    <div className="bg-charcoal border border-steel-dark rounded-xl p-4 space-y-3">
+    <section className="bg-charcoal border border-steel-dark rounded-xl p-4 space-y-3" aria-label="Tasks">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-text-primary flex items-center gap-2">
-          <ListTodo className="w-4 h-4 text-vinegar-gold" />
+          <ListTodo className="w-4 h-4 text-vinegar-gold" aria-hidden="true" />
           Tasks
         </h3>
         <span className="text-[10px] text-text-muted font-jetbrains">{pendingTasks.length} pending</span>
@@ -68,14 +69,14 @@ export function TasksWidget() {
       )}
 
       {loading ? (
-        <p className="text-xs text-text-muted text-center py-4">Loading...</p>
+        <SkeletonList items={4} />
       ) : pendingTasks.length === 0 ? (
-        <p className="text-xs text-text-muted text-center py-4">All clear!</p>
+        <EmptyState icon={<PartyPopper className="w-8 h-8" />} title="All clear!" description="No pending tasks" />
       ) : (
         <ul className="space-y-1.5">
           {pendingTasks.slice(0, 8).map(task => (
             <li key={task.id} className="flex items-center gap-2 py-1 group">
-              <button onClick={() => completeTask(task)} className="text-steel-mid hover:text-success shrink-0">
+              <button onClick={() => completeTask(task)} aria-label={`Complete task: ${task.title}`} className="text-steel-mid hover:text-success shrink-0">
                 <CheckCircle2 className="w-4 h-4" />
               </button>
               <span className={`flex-1 text-xs truncate ${PRIORITY_COLORS[task.priority] || "text-text-secondary"}`}>
@@ -94,6 +95,6 @@ export function TasksWidget() {
           )}
         </ul>
       )}
-    </div>
+    </section>
   );
 }

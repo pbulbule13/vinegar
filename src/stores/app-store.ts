@@ -89,6 +89,34 @@ export const useSettingsStore = create<SettingsSlice>((set) => ({
   toggleModelPicker: () => set((s) => ({ showModelPicker: !s.showModelPicker })),
 }));
 
+// ─── Data Cache Store (session-level caching for frequently fetched data) ───
+
+interface CacheEntry<T> {
+  data: T;
+  fetchedAt: number;
+}
+
+interface DataCacheSlice {
+  familyMembers: CacheEntry<Array<{ id: string; name: string; role: string; age: number | null; is_active: boolean }>> | null;
+  setFamilyMembers: (members: Array<{ id: string; name: string; role: string; age: number | null; is_active: boolean }>) => void;
+  getFamilyMembers: () => Array<{ id: string; name: string; role: string; age: number | null; is_active: boolean }> | null;
+  invalidateFamily: () => void;
+}
+
+const CACHE_TTL = 60_000; // 1 minute
+
+export const useDataCacheStore = create<DataCacheSlice>((set, get) => ({
+  familyMembers: null,
+  setFamilyMembers: (members) => set({ familyMembers: { data: members, fetchedAt: Date.now() } }),
+  getFamilyMembers: () => {
+    const entry = get().familyMembers;
+    if (!entry) return null;
+    if (Date.now() - entry.fetchedAt > CACHE_TTL) return null;
+    return entry.data;
+  },
+  invalidateFamily: () => set({ familyMembers: null }),
+}));
+
 // ─── Voice/Chat Store ───
 
 export interface Message {

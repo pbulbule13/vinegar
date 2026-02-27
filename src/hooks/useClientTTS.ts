@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { splitIntoChunks, cleanForSpeech } from "@/lib/tts-utils";
 
 export interface TTSSettings {
   language: string;   // "en-US" | "en-IN" | "hi-IN" | "mr-IN"
@@ -33,44 +34,6 @@ export interface UseClientTTSReturn {
   updateSettings: (patch: Partial<TTSSettings>) => void;
   loadSettings: () => Promise<void>;
   saveSettings: () => Promise<void>;
-}
-
-// ─── Text Chunking (avoids Chrome's long-text pause bug) ───
-
-function splitIntoChunks(text: string, maxLen: number = 150): string[] {
-  if (text.length <= maxLen) return [text];
-
-  const chunks: string[] = [];
-  let remaining = text;
-
-  while (remaining.length > 0) {
-    if (remaining.length <= maxLen) {
-      chunks.push(remaining);
-      break;
-    }
-    let breakAt = remaining.lastIndexOf(". ", maxLen);
-    if (breakAt < maxLen * 0.3) breakAt = remaining.lastIndexOf(", ", maxLen);
-    if (breakAt < maxLen * 0.3) breakAt = remaining.lastIndexOf(" ", maxLen);
-    if (breakAt < maxLen * 0.3) breakAt = maxLen;
-    chunks.push(remaining.substring(0, breakAt + 1).trim());
-    remaining = remaining.substring(breakAt + 1).trim();
-  }
-
-  return chunks.filter((c) => c.length > 0);
-}
-
-function cleanForSpeech(text: string): string {
-  return text
-    .replace(/```[\s\S]*?```/g, " code block ")
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/\*([^*]+)\*/g, "$1")
-    .replace(/#+\s/g, "")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/[`~|>]/g, "")
-    .replace(/\n+/g, ". ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 1500);
 }
 
 /**
