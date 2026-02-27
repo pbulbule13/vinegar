@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Settings, X, Key, Check, AlertCircle, MessageSquare, Globe, Volume2, MapPin, Users, Mic, Trash2 } from "lucide-react";
 import { VoiceEnrollment } from "@/components/voice-enrollment";
 import { useSpeakerIdentification } from "@/hooks/useSpeakerIdentification";
+import { useToastStore } from "@/stores/app-store";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -62,6 +63,7 @@ export function SettingsModal({ isOpen, onClose, onTTSSettingsChange }: Settings
   const [familyMembers, setFamilyMembers] = useState<{ id: string; name: string; role: string; voiceEnrolled: boolean }[]>([]);
   const [enrollingMember, setEnrollingMember] = useState<{ id: string; name: string; role: string } | null>(null);
   const speakerId = useSpeakerIdentification();
+  const addToast = useToastStore((s) => s.addToast);
 
   // Load voices from browser
   useEffect(() => {
@@ -85,7 +87,7 @@ export function SettingsModal({ isOpen, onClose, onTTSSettingsChange }: Settings
     fetch("/api/settings").then(r => r.json()).then(data => {
       setKeySource(data.keySource);
       setEuriKeySource(data.euri?.keySource || "none");
-    }).catch(() => {});
+    }).catch(() => addToast("error", "Failed to load API key settings"));
 
     // TTS settings
     fetch("/api/settings/tts").then(r => r.json()).then((data: TTSData) => {
@@ -94,7 +96,7 @@ export function SettingsModal({ isOpen, onClose, onTTSSettingsChange }: Settings
       if (data.tts_pitch) setTtsPitch(parseFloat(data.tts_pitch) || 1.0);
       if (data.tts_voice) setSelectedVoice(data.tts_voice);
       if (data.stt_language) setSttLang(data.stt_language);
-    }).catch(() => {});
+    }).catch(() => addToast("warning", "Failed to load voice settings"));
 
     // Location settings
     fetch("/api/settings/location").then(r => r.json()).then((data: LocationData) => {
@@ -102,7 +104,7 @@ export function SettingsModal({ isOpen, onClose, onTTSSettingsChange }: Settings
       setWorkLoc(data.work_location || "");
       setHomeZip(data.home_zip || "");
       setWeatherCity(data.weather_city || "");
-    }).catch(() => {});
+    }).catch(() => addToast("warning", "Failed to load location settings"));
 
     // Family members for voice profiles
     fetch("/api/family").then(r => r.json()).then(data => {
@@ -112,7 +114,7 @@ export function SettingsModal({ isOpen, onClose, onTTSSettingsChange }: Settings
         role: m.role as string,
         voiceEnrolled: !!m.voiceEnrolled,
       })));
-    }).catch(() => {});
+    }).catch(() => addToast("warning", "Failed to load family members"));
   }, [isOpen]);
 
   // Save TTS settings (debounced)
@@ -124,8 +126,10 @@ export function SettingsModal({ isOpen, onClose, onTTSSettingsChange }: Settings
         body: JSON.stringify(patch),
       });
       onTTSSettingsChange?.();
-    } catch {}
-  }, [onTTSSettingsChange]);
+    } catch {
+      addToast("error", "Failed to save voice settings");
+    }
+  }, [onTTSSettingsChange, addToast]);
 
   // Delete voice profile
   const handleDeleteVoice = useCallback(async (memberId: string) => {
@@ -136,8 +140,10 @@ export function SettingsModal({ isOpen, onClose, onTTSSettingsChange }: Settings
         body: JSON.stringify({ action: "delete_voice", member_id: memberId }),
       });
       setFamilyMembers(prev => prev.map(m => m.id === memberId ? { ...m, voiceEnrolled: false } : m));
-    } catch {}
-  }, []);
+    } catch {
+      addToast("error", "Failed to delete voice profile");
+    }
+  }, [addToast]);
 
   const handleEnrollComplete = useCallback(() => {
     setEnrollingMember(null);
@@ -149,8 +155,8 @@ export function SettingsModal({ isOpen, onClose, onTTSSettingsChange }: Settings
         role: m.role as string,
         voiceEnrolled: !!m.voiceEnrolled,
       })));
-    }).catch(() => {});
-  }, []);
+    }).catch(() => addToast("warning", "Failed to refresh family list"));
+  }, [addToast]);
 
   // Save location settings
   const saveLocationSettings = useCallback(async (patch: Partial<LocationData>) => {
@@ -160,8 +166,10 @@ export function SettingsModal({ isOpen, onClose, onTTSSettingsChange }: Settings
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       });
-    } catch {}
-  }, []);
+    } catch {
+      addToast("error", "Failed to save location settings");
+    }
+  }, [addToast]);
 
   const handleTTSLangChange = (lang: string) => {
     setTtsLang(lang);

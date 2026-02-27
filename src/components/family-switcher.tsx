@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { User, ChevronDown } from "lucide-react";
+import { useToastStore } from "@/stores/app-store";
 
 interface FamilyMember {
   id: string;
@@ -14,6 +15,7 @@ export function FamilySwitcher() {
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const addToast = useToastStore((s) => s.addToast);
 
   useEffect(() => {
     fetch("/api/family")
@@ -22,8 +24,8 @@ export function FamilySwitcher() {
         setMembers(data.members || []);
         setActiveId(data.activeId);
       })
-      .catch(() => {});
-  }, []);
+      .catch(() => addToast("warning", "Failed to load family members"));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const switchMember = async (id: string) => {
     const res = await fetch("/api/family", {

@@ -58,24 +58,58 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
   }
 }
 
+// ─── Skill Cache (avoids full table scan + JSON parse on every call) ───
+
+interface CachedSkill {
+  id: string;
+  name: string;
+  type: string;
+  trigger_phrases: string[];
+  config: string;
+}
+
+let skillsCache: CachedSkill[] | null = null;
+let skillsCacheTimestamp = 0;
+const SKILLS_CACHE_TTL_MS = 60 * 1000; // 1 minute
+
+function getCachedSkills(): CachedSkill[] {
+  const now = Date.now();
+  if (skillsCache && now - skillsCacheTimestamp < SKILLS_CACHE_TTL_MS) {
+    return skillsCache;
+  }
+  try {
+    const rows = db.prepare('SELECT id, name, type, trigger_phrases, config FROM skills WHERE is_active = 1').all() as Array<{
+      id: string; name: string; type: string; trigger_phrases: string; config: string;
+    }>;
+    skillsCache = rows.map(r => ({
+      ...r,
+      trigger_phrases: JSON.parse(r.trigger_phrases) as string[],
+    }));
+    skillsCacheTimestamp = now;
+  } catch {
+    skillsCache = [];
+    skillsCacheTimestamp = now;
+  }
+  return skillsCache;
+}
+
+/** Invalidate the skills cache (call after skill create/update/delete) */
+export function invalidateSkillsCache(): void {
+  skillsCache = null;
+  skillsCacheTimestamp = 0;
+}
+
 // ─── Skill Matching ───
 
 async function executeSkillMatch(query: string, args: Record<string, unknown>): Promise<ToolResult | null> {
-  try {
-    const skills = db.prepare('SELECT * FROM skills WHERE is_active = 1').all() as Array<{
-      id: string; name: string; type: string; trigger_phrases: string; config: string;
-    }>;
+  const skills = getCachedSkills();
+  const queryLower = query.toLowerCase();
 
-    for (const skill of skills) {
-      const phrases = JSON.parse(skill.trigger_phrases) as string[];
-      const queryLower = query.toLowerCase();
-      const matched = phrases.some(p => queryLower.includes(p.toLowerCase()));
-      if (matched) {
-        return await executeSkill(skill, args);
-      }
+  for (const skill of skills) {
+    const matched = skill.trigger_phrases.some(p => queryLower.includes(p.toLowerCase()));
+    if (matched) {
+      return await executeSkill({ id: skill.id, name: skill.name, type: skill.type, config: skill.config }, args);
     }
-  } catch {
-    // Skills table might not exist yet
   }
   return null;
 }

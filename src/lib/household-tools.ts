@@ -4,7 +4,7 @@
  */
 
 import { db, generateId } from './db';
-import { registerTool } from './tool-executor';
+import { registerTool, invalidateSkillsCache } from './tool-executor';
 
 // ─── Grocery Tool ───
 
@@ -224,6 +224,7 @@ registerTool('manage_skill', 'Create and manage custom skills', (args) => {
       db.prepare('INSERT INTO skills (id, name, description, type, trigger_phrases, config, schedule) VALUES (?, ?, ?, ?, ?, ?, ?)')
         .run(skillId, name, description, type, JSON.stringify(trigger_phrases), JSON.stringify(config), schedule || null);
 
+      invalidateSkillsCache();
       return { success: true, data: { id: skillId }, message: `Skill "${name}" created! Say any of: ${trigger_phrases.join(', ')}` };
     }
     case 'delete': {
@@ -233,6 +234,7 @@ registerTool('manage_skill', 'Create and manage custom skills', (args) => {
       } else if (name) {
         db.prepare('DELETE FROM skills WHERE name LIKE ?').run(`%${name}%`);
       }
+      invalidateSkillsCache();
       return { success: true, message: 'Skill deleted' };
     }
     case 'list':

@@ -13,16 +13,39 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   const encoder = new TextEncoder();
 
+  // Track intervals and listeners for cleanup
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  let suggestionsInterval: ReturnType<typeof setInterval> | null = null;
+  let onReminderFired: ((data: unknown) => void) | null = null;
+
+  const cleanup = () => {
+    if (onReminderFired) {
+      vinegarEvents.off('reminder:fired', onReminderFired);
+      onReminderFired = null;
+    }
+    if (heartbeat) {
+      clearInterval(heartbeat);
+      heartbeat = null;
+    }
+    if (suggestionsInterval) {
+      clearInterval(suggestionsInterval);
+      suggestionsInterval = null;
+    }
+  };
+
   const stream = new ReadableStream({
     start(controller) {
       // Send initial heartbeat
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'connected' })}\n\n`));
 
       // Listen for fired reminders
-      const onReminderFired = (data: unknown) => {
+      onReminderFired = (data: unknown) => {
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'reminder', ...(data as Record<string, unknown>) })}\n\n`));
-        } catch {}
+        } catch {
+          // Client disconnected — enqueue failed, trigger cleanup
+          cleanup();
+        }
       };
 
       vinegarEvents.on('reminder:fired', onReminderFired);
@@ -34,40 +57,31 @@ export async function GET() {
       }
 
       // Heartbeat every 30s to keep connection alive
-      const heartbeat = setInterval(() => {
+      heartbeat = setInterval(() => {
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'heartbeat', time: Date.now() })}\n\n`));
         } catch {
-          clearInterval(heartbeat);
+          cleanup();
         }
       }, 30000);
 
       // Suggestions update every 5 minutes
-      const suggestionsInterval = setInterval(() => {
+      suggestionsInterval = setInterval(() => {
         try {
           const sug = getActiveSuggestions();
           if (sug.length > 0) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'suggestions', suggestions: sug })}\n\n`));
           }
-        } catch {}
+        } catch {
+          // Suggestion fetch failed — non-critical
+        }
       }, 300000);
 
-      // Cleanup on close
-      const cleanup = () => {
-        vinegarEvents.off('reminder:fired', onReminderFired);
-        clearInterval(heartbeat);
-        clearInterval(suggestionsInterval);
-      };
-
-      // Handle client disconnect via AbortSignal
-      // The controller.close() will be called by the runtime when the client disconnects
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'ready' })}\n\n`));
-
-      // Store cleanup for when stream closes
-      (controller as unknown as { _cleanup: () => void })._cleanup = cleanup;
     },
     cancel() {
-      // Client disconnected - this is automatically called
+      // Client disconnected — clean up all intervals and listeners
+      cleanup();
     },
   });
 
