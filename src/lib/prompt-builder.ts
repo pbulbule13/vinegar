@@ -5,6 +5,7 @@
  */
 
 import { db } from './db';
+import { getRecentConversations } from './conversation-logger';
 
 // ─── Context Sanitization ───
 
@@ -226,6 +227,81 @@ export function buildMemoryContext(
       if (members.length > 0) sections.push(`[Family] ${members.map(m => `${m.name} (${m.role})`).join(', ')}`);
     } catch {}
   }
+
+  // Inject per-member tasks and reminders when speaker is identified
+  if (activeMemberId) {
+    try {
+      // Tasks assigned to this member
+      const memberTasks = db.prepare(`
+        SELECT title, priority, due_date FROM tasks
+        WHERE assigned_to = ? AND status = 'pending'
+        ORDER BY due_date ASC NULLS LAST LIMIT 3
+      `).all(activeMemberId) as Array<{ title: string; priority: string; due_date: number | null }>;
+
+      if (memberTasks.length > 0) {
+        sections.push('[Your Tasks]');
+        for (const t of memberTasks) {
+          const due = t.due_date ? ` (due: ${new Date(t.due_date * 1000).toLocaleDateString()})` : '';
+          sections.push(`- [${t.priority}] ${t.title}${due}`);
+        }
+      }
+
+      // Reminders targeted at this member
+      const memberReminders = db.prepare(`
+        SELECT message, next_fire_time FROM scheduled_reminders
+        WHERE target_member_id = ? AND is_active = 1 AND delivery_status = 'pending'
+          AND next_fire_time BETWEEN ? AND ?
+        ORDER BY next_fire_time ASC LIMIT 3
+      `).all(activeMemberId, Math.floor(Date.now() / 1000), Math.floor(Date.now() / 1000) + 86400) as Array<{ message: string; next_fire_time: number }>;
+
+      if (memberReminders.length > 0) {
+        sections.push('[Your Reminders]');
+        for (const r of memberReminders) {
+          const time = new Date(r.next_fire_time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          sections.push(`- ${time}: ${r.message}`);
+        }
+      }
+
+      // Homework for child speakers
+      const memberRole = db.prepare('SELECT role FROM family_members WHERE id = ?').get(activeMemberId) as { role: string } | undefined;
+      if (memberRole?.role === 'child') {
+        const homework = db.prepare(`
+          SELECT title, subject, due_date, status FROM assignments
+          WHERE child_id = ? AND status IN ('pending', 'in_progress', 'overdue')
+          ORDER BY due_date ASC NULLS LAST LIMIT 3
+        `).all(activeMemberId) as Array<{ title: string; subject: string; due_date: number | null; status: string }>;
+
+        if (homework.length > 0) {
+          sections.push('[Your Homework]');
+          for (const h of homework) {
+            const due = h.due_date ? ` (due: ${new Date(h.due_date * 1000).toLocaleDateString()})` : '';
+            sections.push(`- [${h.status}] ${h.title}${h.subject ? ` (${h.subject})` : ''}${due}`);
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // Inject recent conversation history for continuity
+  try {
+    const recent = getRecentConversations(10); // last 10 messages
+    if (recent.length > 0) {
+      const recentPairs: string[] = [];
+      // Reverse to chronological order, limit to ~500 chars total
+      let charBudget = 500;
+      for (const entry of recent.reverse()) {
+        const prefix = entry.role === 'user' ? 'You' : 'Vinegar';
+        const snippet = entry.content.length > 100 ? entry.content.slice(0, 100) + '...' : entry.content;
+        if (charBudget <= 0) break;
+        recentPairs.push(`${prefix}: ${snippet}`);
+        charBudget -= snippet.length;
+      }
+      if (recentPairs.length > 0) {
+        sections.push('[Recent Conversation]');
+        recentPairs.forEach(p => sections.push(`- ${p}`));
+      }
+    }
+  } catch {}
 
   // Inject visual panel state so LLM can reference what the user sees
   if (visualContext) {

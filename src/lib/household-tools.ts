@@ -72,13 +72,30 @@ registerTool('manage_meals', 'Plan meals for specific dates', (args) => {
       if (existing) {
         db.prepare('UPDATE meal_plans SET recipe = ?, ingredients = ? WHERE id = ?')
           .run(recipe, ingredients ? JSON.stringify(ingredients) : null, existing.id);
-        return { success: true, message: `Updated ${meal_type} for ${date}: ${recipe}` };
+      } else {
+        const id = generateId('meal');
+        db.prepare('INSERT INTO meal_plans (id, date, meal_type, recipe, ingredients) VALUES (?, ?, ?, ?, ?)')
+          .run(id, date, meal_type, recipe, ingredients ? JSON.stringify(ingredients) : null);
       }
 
-      const id = generateId('meal');
-      db.prepare('INSERT INTO meal_plans (id, date, meal_type, recipe, ingredients) VALUES (?, ?, ?, ?, ?)')
-        .run(id, date, meal_type, recipe, ingredients ? JSON.stringify(ingredients) : null);
-      return { success: true, data: { id }, message: `Planned ${meal_type} for ${date}: ${recipe}` };
+      // Auto-add missing ingredients to grocery list
+      const addedItems: string[] = [];
+      if (ingredients && Array.isArray(ingredients) && ingredients.length > 0) {
+        for (const ingredient of ingredients) {
+          const normalized = ingredient.toLowerCase().trim();
+          if (!normalized) continue;
+          // Check if already on grocery list (uncompleted)
+          const onList = db.prepare('SELECT id FROM grocery_items WHERE LOWER(item) LIKE ? AND completed = 0').get(`%${normalized}%`);
+          if (!onList) {
+            const grocId = generateId('groc');
+            db.prepare('INSERT INTO grocery_items (id, item, quantity, category) VALUES (?, ?, 1, ?)').run(grocId, ingredient, 'meal-plan');
+            addedItems.push(ingredient);
+          }
+        }
+      }
+
+      const groceryNote = addedItems.length > 0 ? `. Auto-added ${addedItems.length} item${addedItems.length > 1 ? 's' : ''} to grocery list: ${addedItems.join(', ')}` : '';
+      return { success: true, message: `Planned ${meal_type} for ${date}: ${recipe}${groceryNote}` };
     }
     case 'get': {
       if (!date) return { success: false, error: 'date required' };

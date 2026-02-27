@@ -6,6 +6,7 @@
  */
 
 import { db, generateId } from './db';
+import { vinegarEvents } from './events';
 
 export interface Suggestion {
   id: string;
@@ -163,7 +164,6 @@ function checkPendingChores(): void {
 }
 
 function checkWeatherAlerts(): void {
-  // Only suggest weather check if user hasn't checked in a while
   try {
     const now = Math.floor(Date.now() / 1000);
     const hour = new Date().getHours();
@@ -175,7 +175,6 @@ function checkWeatherAlerts(): void {
         WHERE source = 'text' AND created_at > ? AND model != 'offline'
       `).get(now - 3600) as { count: number };
 
-      // Only suggest if user has been active but hasn't checked weather
       if (recentWeatherUse.count > 0) {
         const recentConversations = db.prepare(`
           SELECT content FROM conversation_logs
@@ -186,6 +185,30 @@ function checkWeatherAlerts(): void {
         if (recentConversations.length === 0) {
           addSuggestion('weather', 'Good morning! Want me to check the weather for today?', 'low');
         }
+      }
+    }
+
+    // Proactive: check upcoming events with locations for weather warnings
+    const next12h = now + (12 * 3600);
+    const eventsWithLocation = db.prepare(`
+      SELECT title, location, start_time FROM calendar_events
+      WHERE location IS NOT NULL AND location != ''
+        AND start_time BETWEEN ? AND ?
+      ORDER BY start_time ASC LIMIT 3
+    `).all(now, next12h) as Array<{ title: string; location: string; start_time: number }>;
+
+    // Check if weather data is cached (don't make API calls from suggestion engine)
+    // Instead, suggest checking weather for events with outdoor-sounding locations
+    const outdoorKeywords = /\b(park|field|outdoor|garden|pool|beach|trail|playground|stadium|court)\b/i;
+    for (const evt of eventsWithLocation) {
+      if (outdoorKeywords.test(evt.location) || outdoorKeywords.test(evt.title)) {
+        const eventTime = new Date(evt.start_time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        addSuggestion(
+          'weather',
+          `"${evt.title}" at ${eventTime} looks like an outdoor event. Want me to check the weather forecast?`,
+          'medium',
+          `get_forecast({days:1})`
+        );
       }
     }
   } catch {}
@@ -234,6 +257,71 @@ function checkHomeworkDue(): void {
   } catch {}
 }
 
+function checkUsagePatterns(): void {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const hour = new Date().getHours();
+
+    // Look for tools used repeatedly at similar times of day
+    // Find tools used 3+ times in the same hour-of-day over the last 7 days
+    const patterns = db.prepare(`
+      SELECT tools_used, COUNT(*) as freq,
+        CAST((created_at % 86400) / 3600 AS INTEGER) as hour_of_day
+      FROM conversation_logs
+      WHERE tools_used IS NOT NULL AND created_at > ?
+      GROUP BY tools_used, hour_of_day
+      HAVING freq >= 3
+      ORDER BY freq DESC LIMIT 5
+    `).all(now - 7 * 86400) as Array<{ tools_used: string; freq: number; hour_of_day: number }>;
+
+    for (const p of patterns) {
+      try {
+        const tools = JSON.parse(p.tools_used) as string[];
+        if (tools.length === 0) continue;
+        const toolName = tools[0];
+        const timeDiff = Math.abs(p.hour_of_day - hour);
+        // Only suggest if we're within 1 hour of the pattern
+        if (timeDiff > 1 && timeDiff < 23) continue;
+
+        const timeLabel = p.hour_of_day < 12 ? `${p.hour_of_day}am` : `${p.hour_of_day - 12 || 12}pm`;
+        const toolLabels: Record<string, string> = {
+          get_weather: 'check weather', get_briefing: 'get a briefing', get_calendar: 'check calendar',
+          manage_task: 'review tasks', get_traffic: 'check traffic', manage_grocery: 'update groceries',
+        };
+        const label = toolLabels[toolName] || toolName;
+
+        // Check if a routine for this already exists
+        const existingRoutine = db.prepare('SELECT id FROM routines WHERE steps LIKE ? AND is_active = 1').get(`%${toolName}%`);
+        if (!existingRoutine) {
+          addSuggestion(
+            'habit',
+            `You ${label} around ${timeLabel} most days. Want me to create an automatic routine for this?`,
+            'low',
+            `manage_routine({action:"create",name:"Auto ${label}",type:"custom",steps:[{tool:"${toolName}",args:{}}],trigger_time:"${p.hour_of_day.toString().padStart(2, '0')}:00"})`
+          );
+        }
+      } catch {}
+    }
+
+    // Look for repeated user queries (same question asked 3+ times in 7 days)
+    const repeatedQueries = db.prepare(`
+      SELECT content, COUNT(*) as freq FROM conversation_logs
+      WHERE role = 'user' AND created_at > ? AND LENGTH(content) > 10
+      GROUP BY LOWER(TRIM(content))
+      HAVING freq >= 3
+      ORDER BY freq DESC LIMIT 3
+    `).all(now - 7 * 86400) as Array<{ content: string; freq: number }>;
+
+    for (const q of repeatedQueries) {
+      addSuggestion(
+        'habit',
+        `You've asked "${q.content.slice(0, 50)}${q.content.length > 50 ? '...' : ''}" ${q.freq} times this week. Should I remember this or create a shortcut?`,
+        'low'
+      );
+    }
+  } catch {}
+}
+
 function checkRoutineTime(): void {
   try {
     const hour = new Date().getHours();
@@ -254,6 +342,15 @@ function checkRoutineTime(): void {
   } catch {}
 }
 
+// ─── Follow-up listener (receives events from tool executor) ───
+
+vinegarEvents.on('suggestion:followup', (data: unknown) => {
+  const { type, message, priority } = data as { type: string; message: string; priority: string };
+  if (type && message) {
+    addSuggestion(type as Suggestion['type'], message, (priority || 'low') as Suggestion['priority']);
+  }
+});
+
 // ─── Main scan function (called by background worker) ───
 
 export function scanForSuggestions(): void {
@@ -265,4 +362,5 @@ export function scanForSuggestions(): void {
   checkUpcomingBills();
   checkHomeworkDue();
   checkRoutineTime();
+  checkUsagePatterns();
 }

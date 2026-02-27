@@ -258,7 +258,34 @@ export async function callLLM(
     }
   }
 
-  // 6.5 Detect unanswered/unable-to-help responses and log them as skill gaps
+  // 6.5 Auto-save important facts from user message to memory (proactive)
+  try {
+    const autoSavePatterns = [
+      { regex: /\b(?:my|our)\s+(?:address|home)\s+(?:is|at)\s+(.{5,80})/i, topic: 'Home Address', type: 'fact', importance: 'high' },
+      { regex: /\b(?:my|our)\s+(?:phone|number)\s+(?:is)\s+([\d\s\-+()]{7,20})/i, topic: 'Phone Number', type: 'fact', importance: 'high' },
+      { regex: /\b(?:i|we)\s+(?:are|am)\s+(?:allergic|intolerant)\s+(?:to)\s+(.{3,50})/i, topic: 'Allergy', type: 'preference', importance: 'high' },
+      { regex: /\b(?:i|we)\s+(?:don'?t|do not)\s+eat\s+(.{3,40})/i, topic: 'Dietary Restriction', type: 'preference', importance: 'high' },
+      { regex: /\b(?:i|we)\s+(?:prefer|like|love)\s+(.{3,60})/i, topic: 'Preference', type: 'preference', importance: 'medium' },
+      { regex: /\b(?:my|our)\s+(?:anniversary|wedding)\s+(?:is\s+)?(?:on\s+)?(\w+\s+\d{1,2})/i, topic: 'Anniversary', type: 'fact', importance: 'high' },
+      { regex: /\b(\w+)'?s?\s+birthday\s+(?:is\s+)?(?:on\s+)?(\w+\s+\d{1,2})/i, topic: 'Birthday', type: 'person', importance: 'high' },
+    ];
+
+    for (const pattern of autoSavePatterns) {
+      const match = lastUserMsg.match(pattern.regex);
+      if (match) {
+        const content = match[0].trim();
+        // Check if already saved to avoid duplicates
+        const existing = db.prepare('SELECT id FROM memories WHERE topic = ? AND content LIKE ? LIMIT 1').get(pattern.topic, `%${match[1]?.trim() || content}%`);
+        if (!existing) {
+          db.prepare('INSERT INTO memories (id, topic, content, type, importance, tags, family_member_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())')
+            .run(generateId('auto'), pattern.topic, content, pattern.type, pattern.importance, JSON.stringify(['auto_saved', pattern.type]), activeMemberId || null);
+        }
+        break; // Only auto-save one fact per message to avoid noise
+      }
+    }
+  } catch {}
+
+  // 6.5b Detect unanswered/unable-to-help responses and log them as skill gaps
   const unablePatterns = /\b(I don't have access|I cannot|I'm not able|I'm sorry.*don't have|I'm not equipped|unable to|don't have the ability|can't check|no access to)\b/i;
   if (unablePatterns.test(finalContent) && toolsUsed.length === 0) {
     try {

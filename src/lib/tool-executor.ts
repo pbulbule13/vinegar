@@ -37,6 +37,39 @@ export function getRegisteredTools(): RegisteredTool[] {
   return Array.from(tools.values());
 }
 
+// ─── Smart Follow-up Map ───
+// After a tool executes successfully, suggest related actions
+
+const followUpMap: Record<string, (args: Record<string, unknown>, result: ToolResult) => { type: string; message: string; priority: string } | null> = {
+  create_event: (args) => {
+    if (!args.reminder_minutes) return { type: 'calendar', message: `Event created. Want me to set a reminder before "${args.title}"?`, priority: 'low' };
+    return null;
+  },
+  manage_grocery: (args) => {
+    if (args.action === 'add') return { type: 'grocery', message: `Added to grocery list. Should I plan a meal using these ingredients?`, priority: 'low' };
+    return null;
+  },
+  manage_chore: (args) => {
+    if (args.action === 'complete') return { type: 'task', message: `Chore completed! Want to see the points leaderboard?`, priority: 'low' };
+    return null;
+  },
+  manage_meals: (args) => {
+    if (args.action === 'plan') return { type: 'grocery', message: `Meal planned. Need me to check if you have all the ingredients?`, priority: 'low' };
+    return null;
+  },
+  manage_task: (args) => {
+    if (args.action === 'create' && args.due_date) return { type: 'reminder', message: `Task created with due date. Want a reminder before it's due?`, priority: 'low' };
+    return null;
+  },
+  manage_homework: (args) => {
+    if (args.action === 'add') return { type: 'homework', message: `Assignment added. Should I schedule study time in the calendar?`, priority: 'low' };
+    return null;
+  },
+  get_weather: () => {
+    return { type: 'weather', message: `Want me to check the forecast for the rest of the week?`, priority: 'low' };
+  },
+};
+
 // ─── Execute ───
 
 export async function executeTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {
@@ -51,6 +84,15 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
   try {
     const result = await tool.handler(args);
     vinegarEvents.emit('tool:executed', { name, args, result });
+
+    // Emit smart follow-up suggestion if applicable
+    if (result.success && followUpMap[name]) {
+      const followUp = followUpMap[name](args, result);
+      if (followUp) {
+        vinegarEvents.emit('suggestion:followup', followUp);
+      }
+    }
+
     return result;
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Tool execution failed';
@@ -329,8 +371,8 @@ registerTool('recall_memory', 'Search memory for previously saved info', (args) 
 
 // manage_task
 registerTool('manage_task', 'Create, update, or list tasks', (args) => {
-  const { action = 'list', title, description, priority, status, due_date, category } = args as {
-    action?: string; title?: string; description?: string; priority?: string; status?: string; due_date?: string; category?: string;
+  const { action = 'list', title, description, priority, status, due_date, category, assigned_to, _active_member_id } = args as {
+    action?: string; title?: string; description?: string; priority?: string; status?: string; due_date?: string; category?: string; assigned_to?: string; _active_member_id?: string;
   };
 
   switch (action) {
@@ -339,10 +381,19 @@ registerTool('manage_task', 'Create, update, or list tasks', (args) => {
       const id = generateId('task');
       const dueDate = due_date ? Math.floor(new Date(due_date).getTime() / 1000) : null;
       if (dueDate !== null && isNaN(dueDate)) return { success: false, error: 'Invalid due_date format. Use ISO format (e.g., 2026-02-15)' };
-      db.prepare('INSERT INTO tasks (id, title, description, priority, due_date, category, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())')
-        .run(id, title, description || null, priority || 'medium', dueDate, category || null);
-      vinegarEvents.emit('task:created', { id, title, dueDate });
-      return { success: true, data: { id, title }, message: `Task created: ${title}` };
+
+      // Resolve assigned_to member name to ID
+      let assignedToId: string | null = null;
+      if (assigned_to) {
+        const member = db.prepare('SELECT id FROM family_members WHERE name LIKE ?').get(`%${assigned_to}%`) as { id: string } | undefined;
+        assignedToId = member?.id || null;
+      }
+
+      db.prepare('INSERT INTO tasks (id, title, description, priority, due_date, category, assigned_to, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())')
+        .run(id, title, description || null, priority || 'medium', dueDate, category || null, assignedToId);
+      vinegarEvents.emit('task:created', { id, title, dueDate, assignedTo: assignedToId });
+      const assignMsg = assigned_to ? ` (assigned to ${assigned_to})` : '';
+      return { success: true, data: { id, title }, message: `Task created: ${title}${assignMsg}` };
     }
     case 'update': {
       if (!title) return { success: false, error: 'title required to find task' };
@@ -837,6 +888,7 @@ export function getToolSchemas(): Array<{ type: string; name: string; descriptio
           status: { type: 'string', description: 'pending, in_progress, completed, or cancelled' },
           due_date: { type: 'string', description: 'Due date in ISO format' },
           category: { type: 'string', description: 'Task category' },
+          assigned_to: { type: 'string', description: 'Family member name to assign task to' },
         },
       },
     },
