@@ -5,7 +5,6 @@ import { useRealtimeVoice } from "@/hooks/useRealtimeVoice";
 import { useBrowserVoice } from "@/hooks/useBrowserVoice";
 import { useWakeWord } from "@/hooks/useWakeWord";
 import { useSpeakerIdentification } from "@/hooks/useSpeakerIdentification";
-import type { IdentificationResult } from "@/hooks/useSpeakerIdentification";
 import { tryOfflineResponse } from "@/lib/offline-commands";
 import { detectTypedLanguage } from "@/lib/language-detector";
 import type { SupportedLanguage } from "@/types/language";
@@ -17,16 +16,10 @@ import { ChatColumn } from "@/components/chat-column";
 import { InputArea } from "@/components/input-area";
 import { ContextPanel } from "@/components/context-panel/context-panel";
 import { MobileContextSheet } from "@/components/context-panel/mobile-context-sheet";
+import { ToastContainer } from "@/components/toast-container";
 import { useVisualContext } from "@/hooks/useVisualContext";
 import { stripVisualHint } from "@/lib/visual-context-detector";
-
-interface Message {
-  id: string;
-  role: "user" | "vinegar";
-  text: string;
-  timestamp: Date;
-  source?: "voice" | "text" | "offline";
-}
+import { useSettingsStore, useVoiceStore, useToastStore, type Message } from "@/stores/app-store";
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -38,20 +31,15 @@ function getGreeting(): string {
 }
 
 export default function VinegarHome() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [isActive, setIsActive] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  // ─── Zustand Stores ───
+  const settings = useSettingsStore();
+  const voice = useVoiceStore();
+  const addToast = useToastStore((s) => s.addToast);
+
   const [textInput, setTextInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
-  const [chatHistory, setChatHistory] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
-  const [selectedModel, setSelectedModel] = useState("gemini-2.5-flash");
-  const [showModelPicker, setShowModelPicker] = useState(false);
-  const [wakeWordEnabled, setWakeWordEnabled] = useState(false);
-  const [hasVoiceKey, setHasVoiceKey] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [showVisualPanel, setShowVisualPanel] = useState(true);
+  const langSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Real-time notifications (reminders + suggestions)
   const { notifications, unreadCount, dismiss, dismissAll } = useNotifications();
@@ -59,15 +47,9 @@ export default function VinegarHome() {
   // Visual context panel
   const visualContext = useVisualContext({ debounceMs: 300 });
 
-  // STT/TTS language — single source of truth
-  const [sttLanguage, setSttLanguage] = useState<SupportedLanguage>("en-US");
-  const langSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   // Speaker identification
-  const [identifiedSpeaker, setIdentifiedSpeaker] = useState<IdentificationResult | null>(null);
-
-  const handleSpeakerIdentified = useCallback(async (speaker: IdentificationResult | null) => {
-    setIdentifiedSpeaker(speaker);
+  const handleSpeakerIdentified = useCallback(async (speaker: import("@/hooks/useSpeakerIdentification").IdentificationResult | null) => {
+    voice.setIdentifiedSpeaker(speaker);
     if (speaker) {
       try {
         await fetch("/api/family", {
@@ -75,9 +57,11 @@ export default function VinegarHome() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "voice_switch", member_id: speaker.memberId }),
         });
-      } catch {}
+      } catch {
+        addToast("warning", "Failed to switch voice profile");
+      }
     }
-  }, []);
+  }, [voice, addToast]);
 
   const speakerId = useSpeakerIdentification({
     enabled: true,
@@ -92,14 +76,16 @@ export default function VinegarHome() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stt_language: lang, tts_language: lang }),
-      }).catch(() => {});
+      }).catch(() => {
+        addToast("warning", "Failed to save language setting");
+      });
     }, 2000);
-  }, []);
+  }, [addToast]);
 
   const handleLanguageChange = useCallback((lang: SupportedLanguage) => {
-    setSttLanguage(lang);
+    settings.setSttLanguage(lang);
     syncLanguageToServer(lang);
-  }, [syncLanguageToServer]);
+  }, [settings, syncLanguageToServer]);
 
   // Client-side TTS with onSpeakEnd wired to voice hook
   const clientTTS = useClientTTS(() => {
@@ -109,15 +95,25 @@ export default function VinegarHome() {
   });
   const browserVoiceRef = useRef<{ notifySpeakEnd: () => void } | null>(null);
 
-  // Check if voice key is available + load STT language
+  // Load settings on mount
   useEffect(() => {
-    fetch("/api/settings").then(r => r.json()).then(data => {
-      setHasVoiceKey(data.keySource !== "none");
-    }).catch(() => {});
-    fetch("/api/settings/tts").then(r => r.json()).then(data => {
-      if (data.stt_language) setSttLanguage(data.stt_language as SupportedLanguage);
-    }).catch(() => {});
-  }, []);
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((data) => {
+        settings.setHasVoiceKey(data.keySource !== "none");
+      })
+      .catch(() => {
+        addToast("error", "Failed to load settings");
+      });
+    fetch("/api/settings/tts")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.stt_language) settings.setSttLanguage(data.stt_language as SupportedLanguage);
+      })
+      .catch(() => {
+        addToast("warning", "Failed to load voice settings");
+      });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cleanup lang sync timer
   useEffect(() => {
@@ -134,26 +130,23 @@ export default function VinegarHome() {
     stopPassiveListening,
   } = useWakeWord({
     wakeWord: "vinegar",
-    sttLanguage,
+    sttLanguage: settings.sttLanguage,
     onWake: () => {
-      if (!isActive) {
-        // CRITICAL: Stop passive listening BEFORE starting active voice
-        // Only one SpeechRecognition instance can be active at a time
+      if (!voice.isActive) {
         stopPassiveListening();
         setTimeout(() => {
           handleVoiceActivate();
-        }, 200); // Small delay to let recognition fully stop
+        }, 200);
       }
     },
     onSleep: () => {
-      if (isActive) {
+      if (voice.isActive) {
         stopListening();
         disconnect();
-        setIsActive(false);
+        voice.setIsActive(false);
         speakText("Going to sleep. Say Vinegar when you need me.");
-        // Restart passive listening after voice deactivates
         setTimeout(() => {
-          if (wakeWordEnabled) startPassiveListening();
+          if (settings.wakeWordEnabled) startPassiveListening();
         }, 1000);
       }
     },
@@ -164,23 +157,27 @@ export default function VinegarHome() {
   const voiceCallbacks = {
     onTranscript: (text: string, isFinal: boolean) => {
       if (text.trim() && isFinal) {
-        setMessages((prev) => [
-          ...prev,
-          { id: `user_${Date.now()}`, role: "user", text: text.trim(), timestamp: new Date(), source: "voice" },
-        ]);
-        // Tier 1: Instant visual detection from voice transcript
+        voice.addMessage({
+          id: `user_${Date.now()}`,
+          role: "user",
+          text: text.trim(),
+          timestamp: new Date(),
+          source: "voice",
+        });
         visualContext.updateFromMessage(text.trim());
       }
     },
     onAIResponse: (text: string) => {
       if (text.trim()) {
-        // Tier 2: Extract [visual:] hints and strip before display
         const cleaned = stripVisualHint(text);
         visualContext.updateFromResponse(text);
-        setMessages((prev) => [
-          ...prev,
-          { id: `vinegar_${Date.now()}`, role: "vinegar", text: cleaned.trim(), timestamp: new Date(), source: "voice" },
-        ]);
+        voice.addMessage({
+          id: `vinegar_${Date.now()}`,
+          role: "vinegar",
+          text: cleaned.trim(),
+          timestamp: new Date(),
+          source: "voice",
+        });
       }
     },
     onToolResult: (toolName: string, result: { success: boolean; data?: unknown; message?: string }) => {
@@ -197,8 +194,8 @@ export default function VinegarHome() {
 
   // Browser-native voice (free)
   const browserVoice = useBrowserVoice({
-    model: selectedModel,
-    sttLanguage,
+    model: settings.selectedModel,
+    sttLanguage: settings.sttLanguage,
     onSpeak: (text: string) => clientTTS.speak(text),
     onSpeakEnd: () => {},
     onLanguageChange: handleLanguageChange,
@@ -209,7 +206,7 @@ export default function VinegarHome() {
     browserVoiceRef.current = { notifySpeakEnd: browserVoice.notifySpeakEnd };
   }, [browserVoice.notifySpeakEnd]);
 
-  const voice = hasVoiceKey ? openaiVoice : browserVoice;
+  const activeVoice = settings.hasVoiceKey ? openaiVoice : browserVoice;
   const {
     isConnected,
     isListening,
@@ -220,50 +217,48 @@ export default function VinegarHome() {
     startListening,
     stopListening,
     error,
-  } = voice;
+  } = activeVoice;
 
   // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, aiTranscript, isTyping]);
+  }, [voice.messages, aiTranscript, voice.isTyping]);
 
   const handleVoiceActivate = useCallback(async () => {
-    if (isActive) {
+    if (voice.isActive) {
       stopListening();
       disconnect();
-      setIsActive(false);
-      setIdentifiedSpeaker(null);
-      // Restart passive listening if wake word is enabled
-      if (wakeWordEnabled) {
+      voice.setIsActive(false);
+      voice.setIdentifiedSpeaker(null);
+      if (settings.wakeWordEnabled) {
         setTimeout(() => startPassiveListening(), 500);
       }
     } else {
       try {
-        // Stop passive listening to free up SpeechRecognition
         stopPassiveListening();
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise((r) => setTimeout(r, 200));
         await speakerId.identifyOnce();
         await connect();
         await startListening();
-        setIsActive(true);
+        voice.setIsActive(true);
       } catch {
-        // Voice activation failed — restart passive if wake word enabled
-        if (wakeWordEnabled) {
+        addToast("error", "Voice activation failed");
+        if (settings.wakeWordEnabled) {
           setTimeout(() => startPassiveListening(), 500);
         }
       }
     }
-  }, [isActive, connect, disconnect, startListening, stopListening, speakerId, wakeWordEnabled, startPassiveListening, stopPassiveListening]);
+  }, [voice, settings.wakeWordEnabled, connect, disconnect, startListening, stopListening, speakerId, startPassiveListening, stopPassiveListening, addToast]);
 
   const toggleWakeWord = useCallback(() => {
-    if (wakeWordEnabled) {
+    if (settings.wakeWordEnabled) {
       stopPassiveListening();
-      setWakeWordEnabled(false);
+      settings.setWakeWordEnabled(false);
     } else {
       startPassiveListening();
-      setWakeWordEnabled(true);
+      settings.setWakeWordEnabled(true);
     }
-  }, [wakeWordEnabled, startPassiveListening, stopPassiveListening]);
+  }, [settings, startPassiveListening, stopPassiveListening]);
 
   const speakText = (text: string) => {
     clientTTS.speak(text);
@@ -272,7 +267,7 @@ export default function VinegarHome() {
   // Text chat with streaming SSE + offline-first approach
   const handleSendText = async () => {
     const text = textInput.trim();
-    if (!text || isTyping) return;
+    if (!text || voice.isTyping) return;
 
     const userMsg: Message = {
       id: `user_text_${Date.now()}`,
@@ -281,7 +276,7 @@ export default function VinegarHome() {
       timestamp: new Date(),
       source: "text",
     };
-    setMessages((prev) => [...prev, userMsg]);
+    voice.addMessage(userMsg);
     setTextInput("");
 
     // Tier 1: Instant visual context detection from user message
@@ -289,25 +284,28 @@ export default function VinegarHome() {
 
     // Detect language from typed text
     const typedLang = detectTypedLanguage(text);
-    const chatLanguage = typedLang || sttLanguage;
-    if (typedLang && typedLang !== sttLanguage) {
+    const chatLanguage = typedLang || settings.sttLanguage;
+    if (typedLang && typedLang !== settings.sttLanguage) {
       handleLanguageChange(typedLang);
     }
 
     // Try offline response first
     const offlineResult = tryOfflineResponse(text, chatLanguage);
     if (offlineResult) {
-      setMessages((prev) => [
-        ...prev,
-        { id: `vinegar_offline_${Date.now()}`, role: "vinegar", text: offlineResult.response, timestamp: new Date(), source: "offline" },
-      ]);
+      voice.addMessage({
+        id: `vinegar_offline_${Date.now()}`,
+        role: "vinegar",
+        text: offlineResult.response,
+        timestamp: new Date(),
+        source: "offline",
+      });
       return;
     }
 
     // Need LLM - use streaming SSE
-    setIsTyping(true);
-    const newHistory = [...chatHistory, { role: "user" as const, content: text }];
-    setChatHistory(newHistory);
+    voice.setIsTyping(true);
+    const newHistory = [...voice.chatHistory, { role: "user" as const, content: text }];
+    voice.setChatHistory(newHistory);
     const streamMsgId = `vinegar_stream_${Date.now()}`;
 
     try {
@@ -319,7 +317,7 @@ export default function VinegarHome() {
       const res = await fetch("/api/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newHistory, model: selectedModel, language: chatLanguage, visualContext: visualSummary }),
+        body: JSON.stringify({ messages: newHistory, model: settings.selectedModel, language: chatLanguage, visualContext: visualSummary }),
       });
 
       if (!res.ok) {
@@ -327,10 +325,13 @@ export default function VinegarHome() {
         throw new Error(data.error || "Failed to get response");
       }
 
-      setMessages((prev) => [
-        ...prev,
-        { id: streamMsgId, role: "vinegar", text: "", timestamp: new Date(), source: "text" },
-      ]);
+      voice.addMessage({
+        id: streamMsgId,
+        role: "vinegar",
+        text: "",
+        timestamp: new Date(),
+        source: "text",
+      });
 
       const reader = res.body?.getReader();
       if (!reader) throw new Error("No response body");
@@ -354,24 +355,28 @@ export default function VinegarHome() {
 
           try {
             const parsed = JSON.parse(data);
-            if (parsed.content) {
+            // Tool execution completed — LLM sends final clean response
+            if (parsed.replaceAll && parsed.content) {
+              fullResponse = parsed.content;
+              voice.updateMessage(streamMsgId, fullResponse);
+            } else if (parsed.clearPrevious) {
+              // Tool detected — clear streamed tool_call text, show loading
+              fullResponse = '';
+              voice.updateMessage(streamMsgId, "Working on it...");
+            } else if (parsed.toolExecution) {
+              // Tool status update
+              const status = parsed.toolExecution.success ? 'Done' : 'Failed';
+              voice.updateMessage(streamMsgId, `Running ${parsed.toolExecution.name}... ${status}`);
+            } else if (parsed.content) {
               fullResponse += parsed.content;
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === streamMsgId ? { ...m, text: fullResponse } : m
-                )
-              );
+              voice.updateMessage(streamMsgId, fullResponse);
             }
           } catch {}
         }
       }
 
       if (!fullResponse) {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === streamMsgId ? { ...m, text: "I couldn't generate a response." } : m
-          )
-        );
+        voice.updateMessage(streamMsgId, "I couldn't generate a response.");
       }
 
       // Tier 2: Check for [visual:] hints in completed response
@@ -391,26 +396,15 @@ export default function VinegarHome() {
 
       // Strip [visual:] hints before storing in history
       const cleanedResponse = stripVisualHint(fullResponse);
-      const updatedHistory = [...newHistory, { role: "assistant" as const, content: cleanedResponse }];
-      setChatHistory(updatedHistory.slice(-20));
+      voice.setChatHistory([...newHistory, { role: "assistant" as const, content: cleanedResponse }].slice(-20));
 
       if (cleanedResponse) speakText(cleanedResponse);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Failed to connect";
-      setMessages((prev) => {
-        const hasStreamMsg = prev.some((m) => m.id === streamMsgId);
-        if (hasStreamMsg) {
-          return prev.map((m) =>
-            m.id === streamMsgId ? { ...m, text: `Connection issue: ${errorMsg}` } : m
-          );
-        }
-        return [
-          ...prev,
-          { id: `error_${Date.now()}`, role: "vinegar", text: `Connection issue: ${errorMsg}`, timestamp: new Date(), source: "text" },
-        ];
-      });
+      voice.updateMessage(streamMsgId, `Connection issue: ${errorMsg}`);
+      addToast("error", errorMsg);
     } finally {
-      setIsTyping(false);
+      voice.setIsTyping(false);
     }
   };
 
@@ -421,26 +415,13 @@ export default function VinegarHome() {
     }
   };
 
-  const toggleNotifications = useCallback(() => {
-    setShowNotifications(prev => !prev);
-  }, []);
-
-  const toggleVisualPanel = useCallback(() => {
-    setShowVisualPanel(prev => !prev);
-  }, []);
-
-  const openSettings = useCallback(() => {
-    setShowSettings(true);
-  }, []);
-
-  const toggleModelPicker = useCallback(() => {
-    setShowModelPicker(prev => !prev);
-  }, []);
-
   const greeting = useMemo(() => getGreeting(), []);
 
   return (
     <div className="min-h-screen flex flex-col bg-[#050508] relative overflow-hidden">
+      {/* Toast notifications for errors/warnings */}
+      <ToastContainer />
+
       {/* Skip navigation link for keyboard users */}
       <a
         href="#main-chat"
@@ -457,20 +438,20 @@ export default function VinegarHome() {
       </div>
 
       <HeaderBar
-        wakeWordEnabled={wakeWordEnabled}
+        wakeWordEnabled={settings.wakeWordEnabled}
         onToggleWakeWord={toggleWakeWord}
-        showNotifications={showNotifications}
-        onToggleNotifications={toggleNotifications}
+        showNotifications={settings.showNotifications}
+        onToggleNotifications={settings.toggleNotifications}
         notifications={notifications}
         unreadCount={unreadCount}
         onDismiss={dismiss}
         onDismissAll={dismissAll}
-        onOpenSettings={openSettings}
-        identifiedSpeaker={identifiedSpeaker}
-        sttLanguage={sttLanguage}
+        onOpenSettings={() => settings.setShowSettings(true)}
+        identifiedSpeaker={voice.identifiedSpeaker}
+        sttLanguage={settings.sttLanguage}
         isConnected={isConnected}
-        showVisualPanel={showVisualPanel}
-        onToggleVisualPanel={toggleVisualPanel}
+        showVisualPanel={settings.showVisualPanel}
+        onToggleVisualPanel={settings.toggleVisualPanel}
         hasVisualContext={!!visualContext.context}
       />
 
@@ -479,20 +460,20 @@ export default function VinegarHome() {
         {/* Chat Column */}
         <div id="main-chat" className="flex-1 flex flex-col items-center min-w-0">
           <ChatColumn
-            messages={messages}
+            messages={voice.messages}
             aiTranscript={aiTranscript}
-            hasVoiceKey={hasVoiceKey}
-            isTyping={isTyping}
+            hasVoiceKey={settings.hasVoiceKey}
+            isTyping={voice.isTyping}
             messagesEndRef={messagesEndRef}
-            isActive={isActive}
+            isActive={voice.isActive}
             isAwake={isAwake}
             isSpeaking={isSpeaking}
             isListening={isListening}
             isIdentifying={speakerId.isIdentifying}
-            wakeWordEnabled={wakeWordEnabled}
+            wakeWordEnabled={settings.wakeWordEnabled}
             greeting={greeting}
             onVoiceActivate={handleVoiceActivate}
-            identifiedSpeaker={identifiedSpeaker}
+            identifiedSpeaker={voice.identifiedSpeaker}
           />
 
           <div className="w-full max-w-2xl mx-auto">
@@ -501,18 +482,18 @@ export default function VinegarHome() {
               onTextInputChange={setTextInput}
               onSend={handleSendText}
               onKeyDown={handleKeyDown}
-              isTyping={isTyping}
-              selectedModel={selectedModel}
-              onModelChange={setSelectedModel}
-              showModelPicker={showModelPicker}
-              onToggleModelPicker={toggleModelPicker}
+              isTyping={voice.isTyping}
+              selectedModel={settings.selectedModel}
+              onModelChange={settings.setSelectedModel}
+              showModelPicker={settings.showModelPicker}
+              onToggleModelPicker={settings.toggleModelPicker}
               inputRef={inputRef}
             />
           </div>
         </div>
 
         {/* Browse & Search Panel — 50/50 split on tablet+ */}
-        {showVisualPanel && (
+        {settings.showVisualPanel && (
           <div className="hidden md:block md:w-1/2 lg:w-1/2 xl:w-1/2 flex-shrink-0 sticky top-0 h-[calc(100vh-4rem)]">
             <ContextPanel
               context={visualContext.context}
@@ -542,7 +523,7 @@ export default function VinegarHome() {
         </div>
       )}
 
-      <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
+      <SettingsModal isOpen={settings.showSettings} onClose={() => settings.setShowSettings(false)} />
     </div>
   );
 }

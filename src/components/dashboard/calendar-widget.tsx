@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import { Calendar, ChevronLeft, ChevronRight, CalendarX } from "lucide-react";
+import { SkeletonList, EmptyState } from "@/components/ui/skeleton";
 
 interface CalendarEvent {
   id: string;
@@ -74,11 +75,11 @@ export function CalendarWidget() {
   }, {});
 
   return (
-    <div className="bg-charcoal border border-steel-dark rounded-xl p-4 space-y-3">
+    <section className="bg-charcoal border border-steel-dark rounded-xl p-4 space-y-3" aria-label="Calendar schedule">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-text-primary flex items-center gap-2">
-          <Calendar className="w-4 h-4 text-vinegar-gold" />
+          <Calendar className="w-4 h-4 text-vinegar-gold" aria-hidden="true" />
           Schedule
         </h3>
         <div className="flex items-center gap-1">
@@ -99,9 +100,9 @@ export function CalendarWidget() {
 
       {/* Events */}
       {loading ? (
-        <p className="text-xs text-text-muted text-center py-4">Loading...</p>
+        <SkeletonList items={3} />
       ) : events.length === 0 ? (
-        <p className="text-xs text-text-muted text-center py-4">No events scheduled</p>
+        <EmptyState icon={<CalendarX className="w-8 h-8" />} title="No events scheduled" description={`Nothing on ${isToday ? "today's" : "this"} calendar`} />
       ) : view === "day" ? (
         <ul className="space-y-2">
           {events.sort((a, b) => a.start_time - b.start_time).map(evt => (
@@ -133,6 +134,6 @@ export function CalendarWidget() {
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }

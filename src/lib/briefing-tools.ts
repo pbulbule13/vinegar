@@ -15,6 +15,10 @@ interface BriefingData {
   tasks: string[];
   grocery_count: number;
   reminders: string[];
+  meals: string[];
+  chores: string[];
+  birthdays: string[];
+  spending: { unpaid_count: number; unpaid_total: number } | null;
   summary: string;
 }
 
@@ -112,7 +116,64 @@ export async function generateBriefing(): Promise<BriefingData> {
     }
   } catch {}
 
-  // 7. Build summary
+  // 7. Today's meal plans
+  const meals: string[] = [];
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const mealPlans = db.prepare('SELECT meal_type, recipe FROM meal_plans WHERE date = ? ORDER BY meal_type').all(today) as Array<{ meal_type: string; recipe: string }>;
+    for (const m of mealPlans) meals.push(`${m.meal_type}: ${m.recipe}`);
+  } catch {}
+
+  // 8. Pending chores
+  const chores: string[] = [];
+  try {
+    const pendingChores = db.prepare(`
+      SELECT t.title, f.name as assigned_to FROM tasks t
+      LEFT JOIN family_members f ON t.assigned_to = f.id
+      WHERE t.category = 'chore' AND t.status = 'pending'
+      ORDER BY t.created_at ASC LIMIT 5
+    `).all() as Array<{ title: string; assigned_to: string | null }>;
+    for (const c of pendingChores) chores.push(`${c.title}${c.assigned_to ? ` (${c.assigned_to})` : ''}`);
+  } catch {}
+
+  // 9. Upcoming birthdays (next 30 days)
+  const birthdays: string[] = [];
+  try {
+    const members = db.prepare('SELECT name, birthday FROM family_members WHERE birthday IS NOT NULL').all() as Array<{ name: string; birthday: string }>;
+    const today = new Date();
+    for (const m of members) {
+      const [, mm, dd] = m.birthday.split('-').map(Number);
+      const bday = new Date(today.getFullYear(), mm - 1, dd);
+      if (bday < today) bday.setFullYear(today.getFullYear() + 1);
+      const daysUntil = Math.ceil((bday.getTime() - today.getTime()) / 86400000);
+      if (daysUntil >= 0 && daysUntil <= 30) {
+        birthdays.push(daysUntil === 0 ? `${m.name}'s birthday is TODAY!` : `${m.name}'s birthday in ${daysUntil} day${daysUntil > 1 ? 's' : ''}`);
+      }
+    }
+    // Also check special_dates
+    const specials = db.prepare('SELECT title, date FROM special_dates').all() as Array<{ title: string; date: string }>;
+    for (const s of specials) {
+      const [, mm, dd] = s.date.split('-').map(Number);
+      const sDate = new Date(today.getFullYear(), mm - 1, dd);
+      if (sDate < today) sDate.setFullYear(today.getFullYear() + 1);
+      const daysUntil = Math.ceil((sDate.getTime() - today.getTime()) / 86400000);
+      if (daysUntil >= 0 && daysUntil <= 14) {
+        birthdays.push(daysUntil === 0 ? `${s.title} is TODAY!` : `${s.title} in ${daysUntil} day${daysUntil > 1 ? 's' : ''}`);
+      }
+    }
+  } catch {}
+
+  // 10. Spending snapshot (unpaid bills)
+  let spending: BriefingData['spending'] = null;
+  try {
+    const unpaid = db.prepare(`
+      SELECT COUNT(*) as count, COALESCE(SUM(amount), 0) as total FROM budget_items
+      WHERE type IN ('bill', 'subscription') AND is_paid = 0
+    `).get() as { count: number; total: number };
+    if (unpaid.count > 0) spending = { unpaid_count: unpaid.count, unpaid_total: unpaid.total };
+  } catch {}
+
+  // 11. Build summary
   const parts: string[] = [greeting];
 
   if (weather) parts.push(`Weather: ${weather}`);
@@ -139,6 +200,24 @@ export async function generateBriefing(): Promise<BriefingData> {
     reminders.forEach(r => parts.push(`  - ${r}`));
   }
 
+  if (meals.length > 0) {
+    parts.push(`Today's meals:`);
+    meals.forEach(m => parts.push(`  - ${m}`));
+  }
+
+  if (chores.length > 0) {
+    parts.push(`Pending chores:`);
+    chores.forEach(c => parts.push(`  - ${c}`));
+  }
+
+  if (birthdays.length > 0) {
+    birthdays.forEach(b => parts.push(`🎂 ${b}`));
+  }
+
+  if (spending) {
+    parts.push(`Bills: ${spending.unpaid_count} unpaid ($${spending.unpaid_total.toFixed(2)})`);
+  }
+
   return {
     greeting,
     weather,
@@ -147,6 +226,10 @@ export async function generateBriefing(): Promise<BriefingData> {
     tasks,
     grocery_count,
     reminders,
+    meals,
+    chores,
+    birthdays,
+    spending,
     summary: parts.join('\n'),
   };
 }

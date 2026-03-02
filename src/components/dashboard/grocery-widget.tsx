@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { ShoppingCart, Check, Plus } from "lucide-react";
+import { ShoppingCart, Check, Plus, ShoppingBag } from "lucide-react";
+import { SkeletonList, EmptyState } from "@/components/ui/skeleton";
 
 interface GroceryItem {
   id: string;
@@ -49,10 +50,10 @@ export function GroceryWidget() {
   };
 
   return (
-    <div className="bg-charcoal border border-steel-dark rounded-xl p-4 space-y-3">
+    <section className="bg-charcoal border border-steel-dark rounded-xl p-4 space-y-3" aria-label="Grocery list">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-text-primary flex items-center gap-2">
-          <ShoppingCart className="w-4 h-4 text-vinegar-gold" />
+          <ShoppingCart className="w-4 h-4 text-vinegar-gold" aria-hidden="true" />
           Grocery
         </h3>
         <span className="text-[10px] text-text-muted font-jetbrains">{items.length} items</span>
@@ -65,17 +66,18 @@ export function GroceryWidget() {
           onChange={e => setNewItem(e.target.value)}
           onKeyDown={e => e.key === "Enter" && addItem()}
           placeholder="Quick add..."
+          aria-label="Add grocery item"
           className="flex-1 bg-deep-space border border-steel-dark rounded px-2 py-1 text-[11px] text-text-primary placeholder-text-muted/40 focus:outline-none focus:border-vinegar-gold/40"
         />
-        <button onClick={addItem} className="p-1 text-vinegar-gold hover:bg-vinegar-gold/10 rounded">
+        <button onClick={addItem} aria-label="Add item to grocery list" className="p-1 text-vinegar-gold hover:bg-vinegar-gold/10 rounded">
           <Plus className="w-3.5 h-3.5" />
         </button>
       </div>
 
       {loading ? (
-        <p className="text-xs text-text-muted text-center py-2">Loading...</p>
+        <SkeletonList items={3} />
       ) : items.length === 0 ? (
-        <p className="text-xs text-text-muted text-center py-2">List empty</p>
+        <EmptyState icon={<ShoppingBag className="w-6 h-6" />} title="List empty" description="Add items above or ask Vinegar" />
       ) : (
         <ul className="space-y-1 max-h-32 overflow-y-auto">
           {items.slice(0, 10).map(item => (
@@ -91,6 +93,6 @@ export function GroceryWidget() {
           {items.length > 10 && <li className="text-[10px] text-text-muted">+{items.length - 10} more</li>}
         </ul>
       )}
-    </div>
+    </section>
   );
 }

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Settings, X, Key, Check, AlertCircle, MessageSquare, Globe, Volume2, MapPin, Users, Mic, Trash2 } from "lucide-react";
 import { VoiceEnrollment } from "@/components/voice-enrollment";
 import { useSpeakerIdentification } from "@/hooks/useSpeakerIdentification";
+import { useToastStore } from "@/stores/app-store";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -62,6 +63,7 @@ export function SettingsModal({ isOpen, onClose, onTTSSettingsChange }: Settings
   const [familyMembers, setFamilyMembers] = useState<{ id: string; name: string; role: string; voiceEnrolled: boolean }[]>([]);
   const [enrollingMember, setEnrollingMember] = useState<{ id: string; name: string; role: string } | null>(null);
   const speakerId = useSpeakerIdentification();
+  const addToast = useToastStore((s) => s.addToast);
 
   // Load voices from browser
   useEffect(() => {
@@ -77,42 +79,36 @@ export function SettingsModal({ isOpen, onClose, onTTSSettingsChange }: Settings
     v.lang.startsWith(ttsLang) || v.lang.startsWith(ttsLang.split("-")[0])
   );
 
-  // Load all settings when modal opens
+  // Load all settings in a single request when modal opens
   useEffect(() => {
     if (!isOpen) return;
 
-    // API key status
-    fetch("/api/settings").then(r => r.json()).then(data => {
-      setKeySource(data.keySource);
-      setEuriKeySource(data.euri?.keySource || "none");
-    }).catch(() => {});
-
-    // TTS settings
-    fetch("/api/settings/tts").then(r => r.json()).then((data: TTSData) => {
-      if (data.tts_language) setTtsLang(data.tts_language);
-      if (data.tts_speed) setTtsSpeed(parseFloat(data.tts_speed) || 1.2);
-      if (data.tts_pitch) setTtsPitch(parseFloat(data.tts_pitch) || 1.0);
-      if (data.tts_voice) setSelectedVoice(data.tts_voice);
-      if (data.stt_language) setSttLang(data.stt_language);
-    }).catch(() => {});
-
-    // Location settings
-    fetch("/api/settings/location").then(r => r.json()).then((data: LocationData) => {
-      setHomeLoc(data.home_location || "");
-      setWorkLoc(data.work_location || "");
-      setHomeZip(data.home_zip || "");
-      setWeatherCity(data.weather_city || "");
-    }).catch(() => {});
-
-    // Family members for voice profiles
-    fetch("/api/family").then(r => r.json()).then(data => {
-      setFamilyMembers((data.members || []).map((m: Record<string, unknown>) => ({
-        id: m.id as string,
-        name: m.name as string,
-        role: m.role as string,
-        voiceEnrolled: !!m.voiceEnrolled,
-      })));
-    }).catch(() => {});
+    fetch("/api/settings/all").then(r => r.json()).then(data => {
+      // API keys
+      if (data.keys) {
+        setKeySource(data.keys.keySource);
+        setEuriKeySource(data.keys.euri?.keySource || "none");
+      }
+      // TTS
+      if (data.tts) {
+        if (data.tts.tts_language) setTtsLang(data.tts.tts_language);
+        if (data.tts.tts_speed) setTtsSpeed(parseFloat(data.tts.tts_speed) || 1.2);
+        if (data.tts.tts_pitch) setTtsPitch(parseFloat(data.tts.tts_pitch) || 1.0);
+        if (data.tts.tts_voice) setSelectedVoice(data.tts.tts_voice);
+        if (data.tts.stt_language) setSttLang(data.tts.stt_language);
+      }
+      // Location
+      if (data.location) {
+        setHomeLoc(data.location.home_location || "");
+        setWorkLoc(data.location.work_location || "");
+        setHomeZip(data.location.home_zip || "");
+        setWeatherCity(data.location.weather_city || "");
+      }
+      // Family members
+      if (data.familyMembers) {
+        setFamilyMembers(data.familyMembers);
+      }
+    }).catch(() => addToast("error", "Failed to load settings"));
   }, [isOpen]);
 
   // Save TTS settings (debounced)
@@ -124,8 +120,10 @@ export function SettingsModal({ isOpen, onClose, onTTSSettingsChange }: Settings
         body: JSON.stringify(patch),
       });
       onTTSSettingsChange?.();
-    } catch {}
-  }, [onTTSSettingsChange]);
+    } catch {
+      addToast("error", "Failed to save voice settings");
+    }
+  }, [onTTSSettingsChange, addToast]);
 
   // Delete voice profile
   const handleDeleteVoice = useCallback(async (memberId: string) => {
@@ -136,8 +134,10 @@ export function SettingsModal({ isOpen, onClose, onTTSSettingsChange }: Settings
         body: JSON.stringify({ action: "delete_voice", member_id: memberId }),
       });
       setFamilyMembers(prev => prev.map(m => m.id === memberId ? { ...m, voiceEnrolled: false } : m));
-    } catch {}
-  }, []);
+    } catch {
+      addToast("error", "Failed to delete voice profile");
+    }
+  }, [addToast]);
 
   const handleEnrollComplete = useCallback(() => {
     setEnrollingMember(null);
@@ -149,8 +149,8 @@ export function SettingsModal({ isOpen, onClose, onTTSSettingsChange }: Settings
         role: m.role as string,
         voiceEnrolled: !!m.voiceEnrolled,
       })));
-    }).catch(() => {});
-  }, []);
+    }).catch(() => addToast("warning", "Failed to refresh family list"));
+  }, [addToast]);
 
   // Save location settings
   const saveLocationSettings = useCallback(async (patch: Partial<LocationData>) => {
@@ -160,8 +160,10 @@ export function SettingsModal({ isOpen, onClose, onTTSSettingsChange }: Settings
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       });
-    } catch {}
-  }, []);
+    } catch {
+      addToast("error", "Failed to save location settings");
+    }
+  }, [addToast]);
 
   const handleTTSLangChange = (lang: string) => {
     setTtsLang(lang);
@@ -264,18 +266,52 @@ export function SettingsModal({ isOpen, onClose, onTTSSettingsChange }: Settings
     } catch { setMessage("Failed to remove key"); }
   };
 
+  // Focus trapping and Escape key
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { onClose(); return; }
+      // Focus trap
+      if (e.key === 'Tab' && modalRef.current) {
+        const focusable = modalRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    // Focus the close button on open
+    const closeBtn = modalRef.current?.querySelector<HTMLElement>('[aria-label="Close settings"]');
+    closeBtn?.focus();
+
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-md bg-[#141418] border border-[#3a3a44] rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Settings">
+      <div ref={modalRef} className="w-full max-w-md bg-[#141418] border border-[#3a3a44] rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-[#3a3a44]/50">
           <div className="flex items-center gap-2">
             <Settings className="w-5 h-5 text-vinegar-gold" />
             <h2 className="font-orbitron text-sm tracking-wider text-text-primary">SETTINGS</h2>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#1e1e24] transition-colors">
+          <button onClick={onClose} aria-label="Close settings" className="p-1.5 rounded-lg hover:bg-[#1e1e24] transition-colors">
             <X className="w-4 h-4 text-text-muted" />
           </button>
         </div>

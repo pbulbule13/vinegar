@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs";
 
 export async function GET() {
   try {
-    const members = db.prepare('SELECT id, name, role, age, birthday, dietary_restrictions, preferences, voice_profile, is_active, created_at FROM family_members ORDER BY role, name').all();
+    const members = db.prepare('SELECT id, name, role, age, birthday, dietary_restrictions, preferences, voice_profile, is_active, preferred_language, preferred_tts_speed, preferred_voice, created_at FROM family_members ORDER BY role, name').all();
     const activeId = getSetting('active_family_member');
 
     return NextResponse.json({
@@ -15,6 +15,9 @@ export async function GET() {
         preferences: m.preferences ? JSON.parse(m.preferences as string) : {},
         isActive: m.id === activeId,
         voiceEnrolled: !!m.voice_profile,
+        preferred_language: m.preferred_language || 'en-US',
+        preferred_tts_speed: m.preferred_tts_speed ?? 1.2,
+        preferred_voice: m.preferred_voice || null,
         voice_profile: undefined, // Don't send raw embedding to client list
       })),
       activeId,
@@ -120,6 +123,34 @@ export async function POST(request: Request) {
         success: true,
         member,
         message: `Voice-switched to ${(member as Record<string, unknown>).name}`,
+      });
+    }
+
+    // Update per-user preferences (language, TTS speed, voice)
+    if (body.action === 'update_preferences') {
+      const { member_id, preferred_language, preferred_tts_speed, preferred_voice } = body;
+      if (!member_id) return NextResponse.json({ error: 'member_id required' }, { status: 400 });
+
+      const member = db.prepare('SELECT id, name FROM family_members WHERE id = ?').get(member_id);
+      if (!member) return NextResponse.json({ error: 'Member not found' }, { status: 404 });
+
+      const updates: string[] = [];
+      const values: unknown[] = [];
+      if (preferred_language) { updates.push('preferred_language = ?'); values.push(preferred_language); }
+      if (preferred_tts_speed !== undefined) {
+        const speed = Math.max(0.5, Math.min(3.0, Number(preferred_tts_speed)));
+        updates.push('preferred_tts_speed = ?'); values.push(speed);
+      }
+      if (preferred_voice !== undefined) { updates.push('preferred_voice = ?'); values.push(preferred_voice || null); }
+
+      if (updates.length === 0) return NextResponse.json({ error: 'No preferences to update' }, { status: 400 });
+      updates.push('updated_at = unixepoch()');
+      values.push(member_id);
+
+      db.prepare(`UPDATE family_members SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+      return NextResponse.json({
+        success: true,
+        message: `Updated preferences for ${(member as Record<string, unknown>).name}`,
       });
     }
 
