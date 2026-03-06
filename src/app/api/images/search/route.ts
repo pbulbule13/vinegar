@@ -8,6 +8,7 @@ import { imageSearchSchema } from '@/lib/validators';
 import { sanitizeForExternal } from '@/lib/pii-redactor';
 import { createCache, normalizeCacheKey } from '@/lib/cache-utils';
 import type { ImageResult } from '@/types/visual-context';
+export const dynamic = 'force-dynamic';
 
 // Server-side cache (100 entries, 30-min TTL)
 const serverCache = createCache<ImageResult[]>(100, 30 * 60 * 1000);

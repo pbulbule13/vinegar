@@ -4,6 +4,9 @@ import { callLLM } from "@/lib/llm-middleware";
 import { chatRequestSchema } from "@/lib/validators";
 import { tryOfflineResponse } from "@/lib/offline-commands";
 import { logConversation } from "@/lib/conversation-logger";
+import '@/lib/init';
+
+export const dynamic = 'force-dynamic';
 
 const DEFAULT_MODEL = "gemini-2.5-flash";
 

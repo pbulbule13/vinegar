@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { db, generateId } from "@/lib/db";
 import { groceryActionSchema } from "@/lib/validators";
 
+export const dynamic = 'force-dynamic';
+
 // Category auto-detection
 const CATEGORY_MAP: Record<string, string> = {
   milk: 'dairy', cheese: 'dairy', yogurt: 'dairy', butter: 'dairy', cream: 'dairy',

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSetting, setSetting } from "@/lib/db";
+export const dynamic = 'force-dynamic';
 
 const LOCATION_KEYS = ["home_location", "work_location", "home_zip", "weather_city"] as const;
 

@@ -17,6 +17,7 @@ import { logToolUsage } from "@/lib/episodes";
 import { buildMemoryContext, getToolInstructions, parseToolCall } from "@/lib/prompt-builder";
 import { db } from "@/lib/db";
 import '@/lib/init';
+export const dynamic = 'force-dynamic';
 
 const EURI_BASE_URL = process.env.EURI_BASE_URL || "https://api.euron.one/api/v1/euri";
 const MAX_TOOL_ITERATIONS = 3;

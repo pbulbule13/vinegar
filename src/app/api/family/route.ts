@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db, generateId, getSetting, setSetting } from "@/lib/db";
 import { familyMemberSchema, familyMemberUpdateSchema } from "@/lib/validators";
 import bcrypt from "bcryptjs";
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {

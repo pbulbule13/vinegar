@@ -8,6 +8,8 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getSetting, db } from "@/lib/db";
 
+export const dynamic = 'force-dynamic';
+
 const TTS_KEYS = ["tts_language", "tts_speed", "tts_pitch", "tts_voice", "stt_language"] as const;
 const LOCATION_KEYS = ["home_location", "work_location", "home_zip", "weather_city"] as const;
 

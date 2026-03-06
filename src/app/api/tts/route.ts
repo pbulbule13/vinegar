@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { sanitizeForExternal } from "@/lib/pii-redactor";
 import { splitIntoChunks, cleanForSpeech } from "@/lib/tts-utils";
 
+export const dynamic = 'force-dynamic';
+
 /**
  * TTS endpoint - FALLBACK ONLY. Primary TTS is client-side SpeechSynthesis.
  * Used when browser has no voices (e.g., some Android WebViews).

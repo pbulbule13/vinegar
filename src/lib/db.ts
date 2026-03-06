@@ -29,13 +29,44 @@ function createDatabase(): Database.Database {
 }
 
 // globalThis singleton for dev mode hot-reload safety
-const globalForDb = globalThis as unknown as { __vinegarDb?: Database.Database };
+const globalForDb = globalThis as unknown as {
+  __vinegarDb?: Database.Database;
+  __vinegarDbReady?: boolean;
+};
 
-export const db: Database.Database = globalForDb.__vinegarDb ?? createDatabase();
-
-if (process.env.NODE_ENV !== 'production') {
-  globalForDb.__vinegarDb = db;
+/**
+ * Lazy DB getter — defers connection until first actual use.
+ * Prevents SQLITE_BUSY during `next build` when multiple workers
+ * import this module simultaneously for metadata collection.
+ */
+function getDb(): Database.Database {
+  if (!globalForDb.__vinegarDb) {
+    globalForDb.__vinegarDb = createDatabase();
+  }
+  // Run migrations once per process
+  if (!globalForDb.__vinegarDbReady) {
+    globalForDb.__vinegarDbReady = true;
+    try {
+      runMigrationsInternal(globalForDb.__vinegarDb);
+      importLegacyDataInternal(globalForDb.__vinegarDb);
+    } catch (err) {
+      if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'SQLITE_BUSY') {
+        console.warn('[DB] Migration skipped (database busy — likely concurrent build worker)');
+      } else {
+        globalForDb.__vinegarDbReady = false;
+        throw err;
+      }
+    }
+  }
+  return globalForDb.__vinegarDb;
 }
+
+// Export a Proxy so `db.prepare(...)` etc. work transparently but lazily
+export const db: Database.Database = new Proxy({} as Database.Database, {
+  get(_target, prop) {
+    return (getDb() as unknown as Record<string | symbol, unknown>)[prop];
+  },
+});
 
 // ─── Migration System ───
 
@@ -479,9 +510,9 @@ const migrations: Migration[] = [
   },
 ];
 
-export function runMigrations(): void {
+function runMigrationsInternal(database: Database.Database): void {
   // Ensure schema_version table exists
-  db.exec(`
+  database.exec(`
     CREATE TABLE IF NOT EXISTS schema_version (
       version INTEGER PRIMARY KEY,
       applied_at INTEGER DEFAULT (unixepoch()),
@@ -489,19 +520,19 @@ export function runMigrations(): void {
     );
   `);
 
-  const currentVersion = (db.prepare('SELECT MAX(version) as v FROM schema_version').get() as { v: number | null })?.v ?? 0;
+  const currentVersion = (database.prepare('SELECT MAX(version) as v FROM schema_version').get() as { v: number | null })?.v ?? 0;
 
   const pending = migrations.filter(m => m.version > currentVersion);
   if (pending.length === 0) return;
 
-  const runMigration = db.transaction(() => {
+  const runMigration = database.transaction(() => {
     for (const migration of pending) {
       // Re-check inside transaction to handle concurrent workers
-      const alreadyApplied = db.prepare('SELECT 1 FROM schema_version WHERE version = ?').get(migration.version);
+      const alreadyApplied = database.prepare('SELECT 1 FROM schema_version WHERE version = ?').get(migration.version);
       if (alreadyApplied) continue;
 
-      migration.up(db);
-      db.prepare('INSERT OR IGNORE INTO schema_version (version, description) VALUES (?, ?)').run(
+      migration.up(database);
+      database.prepare('INSERT OR IGNORE INTO schema_version (version, description) VALUES (?, ?)').run(
         migration.version,
         migration.description
       );
@@ -513,19 +544,23 @@ export function runMigrations(): void {
   console.log(`[DB] Migrations complete. Current version: ${pending[pending.length - 1].version}`);
 }
 
+export function runMigrations(): void {
+  runMigrationsInternal(getDb());
+}
+
 // ─── JSON Import (one-time migration from legacy files) ───
 
-export function importLegacyData(): void {
-  const alreadyImported = db.prepare("SELECT value FROM settings WHERE key = 'legacy_import_done'").get();
+function importLegacyDataInternal(database: Database.Database): void {
+  const alreadyImported = database.prepare("SELECT value FROM settings WHERE key = 'legacy_import_done'").get();
   if (alreadyImported) return;
 
-  const importTransaction = db.transaction(() => {
+  const importTransaction = database.transaction(() => {
     // Import memories
     const memoryFile = path.join(process.cwd(), 'memory-data.json');
     if (fs.existsSync(memoryFile)) {
       try {
         const memories = JSON.parse(fs.readFileSync(memoryFile, 'utf-8'));
-        const insertMemory = db.prepare(`
+        const insertMemory = database.prepare(`
           INSERT OR IGNORE INTO memories (id, topic, content, type, importance, tags, access_count, last_accessed, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
@@ -551,7 +586,7 @@ export function importLegacyData(): void {
     if (fs.existsSync(tasksFile)) {
       try {
         const tasksList = JSON.parse(fs.readFileSync(tasksFile, 'utf-8'));
-        const insertTask = db.prepare(`
+        const insertTask = database.prepare(`
           INSERT OR IGNORE INTO tasks (id, title, description, status, priority, due_date, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `);
@@ -576,7 +611,7 @@ export function importLegacyData(): void {
     if (fs.existsSync(usageFile)) {
       try {
         const usageList = JSON.parse(fs.readFileSync(usageFile, 'utf-8'));
-        const insertUsage = db.prepare(`
+        const insertUsage = database.prepare(`
           INSERT INTO usage_logs (model, audio_input_tokens, audio_output_tokens, text_input_tokens, text_output_tokens, cost, source, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `);
@@ -595,10 +630,14 @@ export function importLegacyData(): void {
     }
 
     // Mark import as done
-    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('legacy_import_done', '1')").run();
+    database.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('legacy_import_done', '1')").run();
   });
 
   importTransaction();
+}
+
+export function importLegacyData(): void {
+  importLegacyDataInternal(getDb());
 }
 
 // ─── Helper Functions ───
@@ -618,15 +657,5 @@ export function setSetting(key: string, value: string): void {
   db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, unixepoch())').run(key, value);
 }
 
-// Run migrations on import (with retry for concurrent build workers)
-try {
-  runMigrations();
-  importLegacyData();
-} catch (err) {
-  // During next build, multiple workers may race on DB — this is safe to ignore
-  if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'SQLITE_BUSY') {
-    console.warn('[DB] Migration skipped (database busy — likely concurrent build worker)');
-  } else {
-    throw err;
-  }
-}
+// DB initialization is now lazy — migrations run on first access via getDb()
+// No eager initialization at module load time to prevent SQLITE_BUSY during next build

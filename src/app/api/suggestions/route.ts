@@ -8,6 +8,8 @@ import { NextResponse } from 'next/server';
 import '@/lib/init';
 import { getActiveSuggestions, dismissSuggestion, scanForSuggestions } from '@/lib/suggestion-engine';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   scanForSuggestions();
   const suggestions = getActiveSuggestions();

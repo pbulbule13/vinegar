@@ -8,6 +8,8 @@ import { NextResponse } from 'next/server';
 import { logConversation, getRecentConversations, searchConversations } from '@/lib/conversation-logger';
 import { z } from 'zod';
 
+export const dynamic = 'force-dynamic';
+
 const logSchema = z.object({
   role: z.enum(['user', 'assistant']),
   content: z.string().min(1).max(50000),
