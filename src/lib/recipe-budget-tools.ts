@@ -158,6 +158,61 @@ registerTool('manage_budget', 'Track bills, subscriptions, expenses, and income.
       return { success: true, message: `Deleted budget item: ${name || id}` };
     }
 
+    case 'analytics': {
+      const now = Math.floor(Date.now() / 1000);
+
+      // Monthly breakdown for last 6 months
+      const months: Array<{ month: string; income: number; expenses: number }> = [];
+      for (let i = 0; i < 6; i++) {
+        const date = new Date();
+        date.setMonth(date.getMonth() - i);
+        const year = date.getFullYear();
+        const month = date.getMonth();
+        const monthStart = Math.floor(new Date(year, month, 1).getTime() / 1000);
+        const monthEnd = Math.floor(new Date(year, month + 1, 1).getTime() / 1000);
+        const label = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+
+        const inc = db.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM budget_items WHERE type = 'income' AND created_at >= ? AND created_at < ?`).get(monthStart, monthEnd) as { total: number };
+        const exp = db.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM budget_items WHERE type IN ('expense','bill','subscription') AND created_at >= ? AND created_at < ?`).get(monthStart, monthEnd) as { total: number };
+        months.push({ month: label, income: inc.total, expenses: exp.total });
+      }
+
+      // Category breakdown (all time)
+      const categories = db.prepare(`
+        SELECT category, SUM(amount) as total, COUNT(*) as count FROM budget_items
+        WHERE type IN ('expense','bill','subscription') AND category IS NOT NULL
+        GROUP BY category ORDER BY total DESC LIMIT 10
+      `).all() as Array<{ category: string; total: number; count: number }>;
+
+      // Recurring costs
+      const recurring = db.prepare(`
+        SELECT name, amount, frequency, type FROM budget_items
+        WHERE frequency != 'one_time' AND is_paid = 0
+        ORDER BY amount DESC LIMIT 10
+      `).all() as Array<{ name: string; amount: number; frequency: string; type: string }>;
+
+      const monthlyRecurring = recurring.reduce((sum, r) => {
+        if (r.frequency === 'weekly') return sum + r.amount * 4.33;
+        if (r.frequency === 'yearly') return sum + r.amount / 12;
+        return sum + r.amount; // monthly
+      }, 0);
+
+      // Build summary
+      const current = months[0];
+      const previous = months[1];
+      const trend = current && previous
+        ? ((current.expenses - previous.expenses) / (previous.expenses || 1) * 100).toFixed(0)
+        : '0';
+
+      const topCats = categories.slice(0, 5).map(c => `${c.category}: $${c.total.toFixed(2)}`).join(', ');
+
+      return {
+        success: true,
+        data: { months, categories, recurring, monthly_recurring: monthlyRecurring },
+        message: `Spending Analytics:\nThis month: $${current?.expenses.toFixed(2) || '0'} (${Number(trend) >= 0 ? '+' : ''}${trend}% vs last month)\nTop categories: ${topCats}\nRecurring monthly: $${monthlyRecurring.toFixed(2)}`,
+      };
+    }
+
     case 'summary':
     default: {
       const now = Math.floor(Date.now() / 1000);

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { db, generateId } from "@/lib/db";
 import { reminderSchema } from "@/lib/validators";
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -18,7 +20,8 @@ export async function GET(request: Request) {
 
     const reminders = db.prepare(query).all(...params);
     return NextResponse.json({ reminders });
-  } catch {
+  } catch (err) {
+    console.error('[API /reminders]', err instanceof Error ? err.message : err);
     return NextResponse.json({ reminders: [] });
   }
 }
@@ -67,7 +70,8 @@ export async function POST(request: Request) {
     `).run(id, type, message, cron_expression || null, next_fire_time || null, target_member_id || null, source_type || 'manual', source_id || null);
 
     return NextResponse.json({ success: true, id, message: `Reminder set: ${message}` });
-  } catch {
+  } catch (err) {
+    console.error('[API /reminders]', err instanceof Error ? err.message : err);
     return NextResponse.json({ error: 'Failed to manage reminder' }, { status: 500 });
   }
 }
@@ -80,7 +84,8 @@ export async function DELETE(request: Request) {
 
     db.prepare('UPDATE scheduled_reminders SET is_active = 0 WHERE id = ?').run(id);
     return NextResponse.json({ success: true });
-  } catch {
+  } catch (err) {
+    console.error('[API /reminders]', err instanceof Error ? err.message : err);
     return NextResponse.json({ error: 'Failed to delete reminder' }, { status: 500 });
   }
 }

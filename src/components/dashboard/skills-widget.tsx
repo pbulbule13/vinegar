@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Zap, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
+import { Zap, ToggleLeft, ToggleRight, Trash2, Sparkles } from "lucide-react";
+import { SkeletonList, EmptyState } from "@/components/ui/skeleton";
 
 interface Skill {
   id: string;
@@ -44,22 +45,19 @@ export function SkillsWidget() {
   const activeCount = skills.filter(s => s.is_active).length;
 
   return (
-    <div className="bg-charcoal border border-steel-dark rounded-xl p-4 space-y-3">
+    <section className="bg-charcoal border border-steel-dark rounded-xl p-4 space-y-3" aria-label="Custom skills">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-text-primary flex items-center gap-2">
-          <Zap className="w-4 h-4 text-vinegar-gold" />
+          <Zap className="w-4 h-4 text-vinegar-gold" aria-hidden="true" />
           Skills
         </h3>
         <span className="text-[10px] text-text-muted font-jetbrains">{activeCount} active</span>
       </div>
 
       {loading ? (
-        <p className="text-xs text-text-muted text-center py-2">Loading...</p>
+        <SkeletonList items={2} />
       ) : skills.length === 0 ? (
-        <div className="text-center py-4">
-          <p className="text-xs text-text-muted">No skills yet</p>
-          <p className="text-[10px] text-text-muted mt-1">Say &quot;Vinegar, learn a new skill&quot;</p>
-        </div>
+        <EmptyState icon={<Sparkles className="w-6 h-6" />} title="No skills yet" description={'Say "Vinegar, learn a new skill"'} />
       ) : (
         <ul className="space-y-2">
           {skills.map(skill => (
@@ -85,6 +83,6 @@ export function SkillsWidget() {
           ))}
         </ul>
       )}
-    </div>
+    </section>
   );
 }

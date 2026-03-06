@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Users, UserCircle } from "lucide-react";
+import { Users, UserCircle, UserPlus } from "lucide-react";
+import { useDataCacheStore } from "@/stores/app-store";
+import { SkeletonBlock, EmptyState } from "@/components/ui/skeleton";
 
 interface FamilyMember {
   id: string;
@@ -14,14 +16,24 @@ interface FamilyMember {
 export function FamilyStatus() {
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const { getFamilyMembers, setFamilyMembers, invalidateFamily } = useDataCacheStore();
 
   const fetchFamily = useCallback(async () => {
+    // Check cache first
+    const cached = getFamilyMembers();
+    if (cached) {
+      setMembers(cached);
+      setLoading(false);
+      return;
+    }
     try {
       const res = await fetch("/api/family");
       const data = await res.json();
-      setMembers(data.members || []);
+      const familyData = data.members || [];
+      setMembers(familyData);
+      setFamilyMembers(familyData);
     } catch {} finally { setLoading(false); }
-  }, []);
+  }, [getFamilyMembers, setFamilyMembers]);
 
   useEffect(() => { fetchFamily(); }, [fetchFamily]);
 
@@ -31,16 +43,17 @@ export function FamilyStatus() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "switch", member_id: id }),
     });
+    invalidateFamily();
     fetchFamily();
   };
 
   const activeMember = members.find(m => m.is_active);
 
   return (
-    <div className="bg-charcoal border border-steel-dark rounded-xl p-4 space-y-3">
+    <section className="bg-charcoal border border-steel-dark rounded-xl p-4 space-y-3" aria-label="Family members">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-text-primary flex items-center gap-2">
-          <Users className="w-4 h-4 text-vinegar-gold" />
+          <Users className="w-4 h-4 text-vinegar-gold" aria-hidden="true" />
           Family
         </h3>
         {activeMember && (
@@ -49,9 +62,9 @@ export function FamilyStatus() {
       </div>
 
       {loading ? (
-        <p className="text-xs text-text-muted text-center py-2">Loading...</p>
+        <SkeletonBlock lines={2} />
       ) : members.length === 0 ? (
-        <p className="text-xs text-text-muted text-center py-2">No family members yet</p>
+        <EmptyState icon={<UserPlus className="w-6 h-6" />} title="No family members yet" description="Say 'Add a family member'" />
       ) : (
         <div className="flex flex-wrap gap-2">
           {members.map(member => (
@@ -73,6 +86,6 @@ export function FamilyStatus() {
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }

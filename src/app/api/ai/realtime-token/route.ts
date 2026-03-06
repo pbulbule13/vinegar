@@ -4,6 +4,7 @@ import { memory } from "@/lib/memory";
 import { redact } from "@/lib/pii-redactor";
 import { getToolSchemas } from "@/lib/tool-executor";
 import { cookies } from "next/headers";
+export const dynamic = 'force-dynamic';
 
 const DEFAULT_REALTIME_MODEL = "gpt-4o-mini-realtime-preview-2024-12-17";
 const ALLOWED_MODELS = [

@@ -2,13 +2,15 @@
  * Proactive Suggestion Engine
  * Analyzes usage patterns and context to generate helpful suggestions.
  * Runs as a background job every 30 minutes.
+ * Tracks dismissals per-user to avoid repeating unhelpful suggestions.
  */
 
 import { db, generateId } from './db';
+import { vinegarEvents } from './events';
 
 export interface Suggestion {
   id: string;
-  type: 'reminder' | 'task' | 'grocery' | 'weather' | 'calendar' | 'habit';
+  type: 'reminder' | 'task' | 'grocery' | 'weather' | 'calendar' | 'habit' | 'homework' | 'routine';
   message: string;
   priority: 'high' | 'medium' | 'low';
   action?: string; // Tool call to execute if user accepts
@@ -19,6 +21,29 @@ export interface Suggestion {
 const activeSuggestions: Suggestion[] = [];
 const MAX_SUGGESTIONS = 10;
 
+// Cache recently dismissed message patterns to avoid DB round-trips
+let dismissedPatternsCache: Set<string> | null = null;
+let dismissedCacheTimestamp = 0;
+const DISMISSED_CACHE_TTL = 5 * 60 * 1000; // 5 min
+
+function getDismissedPatterns(): Set<string> {
+  const now = Date.now();
+  if (dismissedPatternsCache && now - dismissedCacheTimestamp < DISMISSED_CACHE_TTL) {
+    return dismissedPatternsCache;
+  }
+  try {
+    // Load dismissals from last 7 days
+    const sevenDaysAgo = Math.floor(now / 1000) - (7 * 86400);
+    const rows = db.prepare('SELECT suggestion_message FROM dismissed_suggestions WHERE dismissed_at > ? LIMIT 200').all(sevenDaysAgo) as Array<{ suggestion_message: string }>;
+    dismissedPatternsCache = new Set(rows.map(r => r.suggestion_message));
+    dismissedCacheTimestamp = now;
+  } catch {
+    dismissedPatternsCache = new Set();
+    dismissedCacheTimestamp = now;
+  }
+  return dismissedPatternsCache;
+}
+
 export function getActiveSuggestions(): Suggestion[] {
   return activeSuggestions.filter(s => {
     // Expire after 2 hours
@@ -27,6 +52,18 @@ export function getActiveSuggestions(): Suggestion[] {
 }
 
 export function dismissSuggestion(id: string): void {
+  const suggestion = activeSuggestions.find(s => s.id === id);
+  if (suggestion) {
+    // Track dismissal in DB for learning
+    try {
+      const activeMember = db.prepare("SELECT id FROM family_members WHERE is_active = 1 LIMIT 1").get() as { id: string } | undefined;
+      db.prepare('INSERT INTO dismissed_suggestions (id, suggestion_type, suggestion_message, family_member_id) VALUES (?, ?, ?, ?)').run(
+        generateId('dis'), suggestion.type, suggestion.message, activeMember?.id || null
+      );
+      // Invalidate cache
+      dismissedPatternsCache = null;
+    } catch {}
+  }
   const idx = activeSuggestions.findIndex(s => s.id === id);
   if (idx >= 0) activeSuggestions.splice(idx, 1);
 }
@@ -34,6 +71,10 @@ export function dismissSuggestion(id: string): void {
 function addSuggestion(type: Suggestion['type'], message: string, priority: Suggestion['priority'], action?: string): void {
   // Don't duplicate
   if (activeSuggestions.some(s => s.message === message)) return;
+
+  // Don't show previously dismissed suggestions
+  const dismissed = getDismissedPatterns();
+  if (dismissed.has(message)) return;
 
   // Evict oldest if at capacity
   if (activeSuggestions.length >= MAX_SUGGESTIONS) {
@@ -123,7 +164,6 @@ function checkPendingChores(): void {
 }
 
 function checkWeatherAlerts(): void {
-  // Only suggest weather check if user hasn't checked in a while
   try {
     const now = Math.floor(Date.now() / 1000);
     const hour = new Date().getHours();
@@ -135,7 +175,6 @@ function checkWeatherAlerts(): void {
         WHERE source = 'text' AND created_at > ? AND model != 'offline'
       `).get(now - 3600) as { count: number };
 
-      // Only suggest if user has been active but hasn't checked weather
       if (recentWeatherUse.count > 0) {
         const recentConversations = db.prepare(`
           SELECT content FROM conversation_logs
@@ -146,6 +185,30 @@ function checkWeatherAlerts(): void {
         if (recentConversations.length === 0) {
           addSuggestion('weather', 'Good morning! Want me to check the weather for today?', 'low');
         }
+      }
+    }
+
+    // Proactive: check upcoming events with locations for weather warnings
+    const next12h = now + (12 * 3600);
+    const eventsWithLocation = db.prepare(`
+      SELECT title, location, start_time FROM calendar_events
+      WHERE location IS NOT NULL AND location != ''
+        AND start_time BETWEEN ? AND ?
+      ORDER BY start_time ASC LIMIT 3
+    `).all(now, next12h) as Array<{ title: string; location: string; start_time: number }>;
+
+    // Check if weather data is cached (don't make API calls from suggestion engine)
+    // Instead, suggest checking weather for events with outdoor-sounding locations
+    const outdoorKeywords = /\b(park|field|outdoor|garden|pool|beach|trail|playground|stadium|court)\b/i;
+    for (const evt of eventsWithLocation) {
+      if (outdoorKeywords.test(evt.location) || outdoorKeywords.test(evt.title)) {
+        const eventTime = new Date(evt.start_time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        addSuggestion(
+          'weather',
+          `"${evt.title}" at ${eventTime} looks like an outdoor event. Want me to check the weather forecast?`,
+          'medium',
+          `get_forecast({days:1})`
+        );
       }
     }
   } catch {}
@@ -174,6 +237,120 @@ function checkUpcomingBills(): void {
   } catch {}
 }
 
+function checkHomeworkDue(): void {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const twoDays = now + (2 * 86400);
+
+    const assignments = db.prepare(`
+      SELECT a.title, a.subject, a.due_date, f.name as child_name FROM assignments a
+      LEFT JOIN family_members f ON a.child_id = f.id
+      WHERE a.status = 'pending' AND a.due_date IS NOT NULL AND a.due_date BETWEEN ? AND ?
+      LIMIT 5
+    `).all(now, twoDays) as Array<{ title: string; subject: string; due_date: number; child_name: string }>;
+
+    for (const a of assignments) {
+      const daysUntil = Math.ceil((a.due_date - now) / 86400);
+      const urgency = daysUntil <= 1 ? 'high' : 'medium';
+      addSuggestion('homework', `${a.child_name}'s ${a.subject} assignment "${a.title}" is due ${daysUntil === 0 ? 'today' : `in ${daysUntil} day${daysUntil > 1 ? 's' : ''}`}.`, urgency);
+    }
+  } catch {}
+}
+
+function checkUsagePatterns(): void {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const hour = new Date().getHours();
+
+    // Look for tools used repeatedly at similar times of day
+    // Find tools used 3+ times in the same hour-of-day over the last 7 days
+    const patterns = db.prepare(`
+      SELECT tools_used, COUNT(*) as freq,
+        CAST((created_at % 86400) / 3600 AS INTEGER) as hour_of_day
+      FROM conversation_logs
+      WHERE tools_used IS NOT NULL AND created_at > ?
+      GROUP BY tools_used, hour_of_day
+      HAVING freq >= 3
+      ORDER BY freq DESC LIMIT 5
+    `).all(now - 7 * 86400) as Array<{ tools_used: string; freq: number; hour_of_day: number }>;
+
+    for (const p of patterns) {
+      try {
+        const tools = JSON.parse(p.tools_used) as string[];
+        if (tools.length === 0) continue;
+        const toolName = tools[0];
+        const timeDiff = Math.abs(p.hour_of_day - hour);
+        // Only suggest if we're within 1 hour of the pattern
+        if (timeDiff > 1 && timeDiff < 23) continue;
+
+        const timeLabel = p.hour_of_day < 12 ? `${p.hour_of_day}am` : `${p.hour_of_day - 12 || 12}pm`;
+        const toolLabels: Record<string, string> = {
+          get_weather: 'check weather', get_briefing: 'get a briefing', get_calendar: 'check calendar',
+          manage_task: 'review tasks', get_traffic: 'check traffic', manage_grocery: 'update groceries',
+        };
+        const label = toolLabels[toolName] || toolName;
+
+        // Check if a routine for this already exists
+        const existingRoutine = db.prepare('SELECT id FROM routines WHERE steps LIKE ? AND is_active = 1').get(`%${toolName}%`);
+        if (!existingRoutine) {
+          addSuggestion(
+            'habit',
+            `You ${label} around ${timeLabel} most days. Want me to create an automatic routine for this?`,
+            'low',
+            `manage_routine({action:"create",name:"Auto ${label}",type:"custom",steps:[{tool:"${toolName}",args:{}}],trigger_time:"${p.hour_of_day.toString().padStart(2, '0')}:00"})`
+          );
+        }
+      } catch {}
+    }
+
+    // Look for repeated user queries (same question asked 3+ times in 7 days)
+    const repeatedQueries = db.prepare(`
+      SELECT content, COUNT(*) as freq FROM conversation_logs
+      WHERE role = 'user' AND created_at > ? AND LENGTH(content) > 10
+      GROUP BY LOWER(TRIM(content))
+      HAVING freq >= 3
+      ORDER BY freq DESC LIMIT 3
+    `).all(now - 7 * 86400) as Array<{ content: string; freq: number }>;
+
+    for (const q of repeatedQueries) {
+      addSuggestion(
+        'habit',
+        `You've asked "${q.content.slice(0, 50)}${q.content.length > 50 ? '...' : ''}" ${q.freq} times this week. Should I remember this or create a shortcut?`,
+        'low'
+      );
+    }
+  } catch {}
+}
+
+function checkRoutineTime(): void {
+  try {
+    const hour = new Date().getHours();
+    const minute = new Date().getMinutes();
+    const currentTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+
+    // Check for routines that should trigger around this time (±30 min)
+    const routines = db.prepare('SELECT name, type, trigger_time FROM routines WHERE is_active = 1 AND trigger_time IS NOT NULL').all() as Array<{ name: string; type: string; trigger_time: string }>;
+
+    for (const r of routines) {
+      const [rh, rm] = r.trigger_time.split(':').map(Number);
+      const routineMin = rh * 60 + rm;
+      const currentMin = hour * 60 + minute;
+      if (Math.abs(routineMin - currentMin) <= 30) {
+        addSuggestion('routine', `Time for your ${r.type} routine "${r.name}". Want me to run it?`, 'medium', `manage_routine({action:"run",name:"${r.name}"})`);
+      }
+    }
+  } catch {}
+}
+
+// ─── Follow-up listener (receives events from tool executor) ───
+
+vinegarEvents.on('suggestion:followup', (data: unknown) => {
+  const { type, message, priority } = data as { type: string; message: string; priority: string };
+  if (type && message) {
+    addSuggestion(type as Suggestion['type'], message, (priority || 'low') as Suggestion['priority']);
+  }
+});
+
 // ─── Main scan function (called by background worker) ───
 
 export function scanForSuggestions(): void {
@@ -183,4 +360,7 @@ export function scanForSuggestions(): void {
   checkPendingChores();
   checkWeatherAlerts();
   checkUpcomingBills();
+  checkHomeworkDue();
+  checkRoutineTime();
+  checkUsagePatterns();
 }

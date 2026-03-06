@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { db, generateId } from "@/lib/db";
 import { skillSchema } from "@/lib/validators";
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const skills = db.prepare('SELECT * FROM skills ORDER BY use_count DESC, created_at DESC').all();

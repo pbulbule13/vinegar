@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { db, generateId } from "@/lib/db";
 import { groceryActionSchema } from "@/lib/validators";
 
+export const dynamic = 'force-dynamic';
+
 // Category auto-detection
 const CATEGORY_MAP: Record<string, string> = {
   milk: 'dairy', cheese: 'dairy', yogurt: 'dairy', butter: 'dairy', cream: 'dairy',
@@ -91,7 +93,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, message: 'Cleared completed items' });
       }
     }
-  } catch {
+  } catch (err) {
+    console.error('[API /grocery POST]', err instanceof Error ? err.message : err);
     return NextResponse.json({ error: 'Failed to manage grocery list' }, { status: 500 });
   }
 }

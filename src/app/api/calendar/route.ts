@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { db, generateId } from "@/lib/db";
 import { calendarEventSchema, calendarEventUpdateSchema } from "@/lib/validators";
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -34,7 +36,8 @@ export async function GET(request: Request) {
         all_day: Boolean(e.all_day),
       })),
     });
-  } catch {
+  } catch (err) {
+    console.error('[API /calendar GET]', err instanceof Error ? err.message : err);
     return NextResponse.json({ events: [] });
   }
 }
@@ -75,6 +78,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, id, message: `Event created: ${title}` });
   } catch (err) {
+    console.error('[API /calendar POST]', err instanceof Error ? err.message : err);
     return NextResponse.json({ error: 'Failed to create event' }, { status: 500 });
   }
 }
@@ -103,7 +107,8 @@ export async function PUT(request: Request) {
 
     db.prepare(`UPDATE calendar_events SET ${setClauses.join(', ')} WHERE id = ?`).run(...values);
     return NextResponse.json({ success: true });
-  } catch {
+  } catch (err) {
+    console.error('[API /calendar PUT]', err instanceof Error ? err.message : err);
     return NextResponse.json({ error: 'Failed to update event' }, { status: 500 });
   }
 }
@@ -118,7 +123,8 @@ export async function DELETE(request: Request) {
     db.prepare("DELETE FROM scheduled_reminders WHERE source_type = 'calendar' AND source_id = ?").run(id);
 
     return NextResponse.json({ success: true });
-  } catch {
+  } catch (err) {
+    console.error('[API /calendar DELETE]', err instanceof Error ? err.message : err);
     return NextResponse.json({ error: 'Failed to delete event' }, { status: 500 });
   }
 }

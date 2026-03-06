@@ -5,9 +5,11 @@
  * - Conversation summaries after each session
  * - Learning from corrections
  * - Pattern detection over time
+ * - Auto-summarization after N messages per session
  */
 
 import { db, generateId } from './db';
+import { getSessionId } from './conversation-logger';
 
 export type EpisodeType =
   | 'conversation'
@@ -196,6 +198,112 @@ export function getRecentEpisodes(memberId?: string, limit = 10): Episode[] {
     LIMIT ?
   `).all(...(memberId ? [memberId, limit] : [limit])) as Episode[];
   return rows;
+}
+
+// ─── Session Tracking & Auto-Summarization ───
+
+const SESSION_SUMMARY_THRESHOLD = 10; // Summarize after 10 messages
+const sessionMessageCounts = new Map<string, number>();
+
+/**
+ * Track a message in the current session and auto-summarize when threshold is reached.
+ * Called from llm-middleware after each assistant response.
+ */
+export function trackSessionMessage(memberId?: string): void {
+  const sessionId = getSessionId();
+  const count = (sessionMessageCounts.get(sessionId) || 0) + 1;
+  sessionMessageCounts.set(sessionId, count);
+
+  if (count >= SESSION_SUMMARY_THRESHOLD && count % SESSION_SUMMARY_THRESHOLD === 0) {
+    // Auto-summarize in background (non-blocking)
+    try {
+      autoSummarizeSession(sessionId, memberId);
+    } catch {}
+  }
+}
+
+function autoSummarizeSession(sessionId: string, memberId?: string): void {
+  try {
+    const messages = db.prepare(`
+      SELECT role, content FROM conversation_logs
+      WHERE session_id = ? AND role IN ('user', 'assistant')
+      ORDER BY created_at ASC
+    `).all(sessionId) as Array<{ role: string; content: string }>;
+
+    if (messages.length >= 4) {
+      logConversationSummary(messages, sessionId, memberId);
+    }
+  } catch {}
+}
+
+/**
+ * Detect user corrections (e.g., "no, I meant...", "that's wrong", "actually...")
+ * Called from llm-middleware when patterns match.
+ */
+export function detectAndLogCorrection(userMessage: string, previousResponse: string, memberId?: string): boolean {
+  const correctionPatterns = /^\s*(no[,.]?\s|that'?s\s+(?:wrong|incorrect|not right)|actually[,.]?\s|i\s+meant|not\s+(?:that|what i)|you\s+got\s+(?:it\s+)?wrong|wrong[,.]|incorrect)/i;
+  if (correctionPatterns.test(userMessage) && previousResponse) {
+    logCorrection(previousResponse, userMessage, memberId);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Get recent episodes formatted for context injection.
+ * Returns a compact string for the memory context.
+ */
+export function getEpisodeContext(memberId?: string): string {
+  const sections: string[] = [];
+
+  // Recent conversation summaries (last 3 sessions)
+  try {
+    const summaries = db.prepare(`
+      SELECT summary, created_at FROM episodes
+      WHERE event_type = 'conversation'
+      ${memberId ? "AND (family_member_id = ? OR family_member_id IS NULL)" : ""}
+      ORDER BY created_at DESC LIMIT 3
+    `).all(...(memberId ? [memberId] : [])) as Array<{ summary: string; created_at: number }>;
+
+    if (summaries.length > 0) {
+      sections.push('[Recent Sessions]');
+      for (const s of summaries) {
+        const date = new Date(s.created_at * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' });
+        sections.push(`- (${date}) ${s.summary}`);
+      }
+    }
+  } catch {}
+
+  // Detected patterns
+  try {
+    const patterns = detectPatterns(memberId);
+    if (patterns.length > 0) {
+      sections.push('[Usage Patterns]');
+      for (const p of patterns.slice(0, 3)) {
+        sections.push(`- ${p}`);
+      }
+    }
+  } catch {}
+
+  // Recent corrections (learn from mistakes)
+  try {
+    const corrections = db.prepare(`
+      SELECT summary FROM episodes
+      WHERE event_type = 'correction'
+      ${memberId ? "AND (family_member_id = ? OR family_member_id IS NULL)" : ""}
+      AND created_at > unixepoch() - (7 * 86400)
+      ORDER BY created_at DESC LIMIT 2
+    `).all(...(memberId ? [memberId] : [])) as Array<{ summary: string }>;
+
+    if (corrections.length > 0) {
+      sections.push('[Recent Corrections - Avoid repeating these mistakes]');
+      for (const c of corrections) {
+        sections.push(`- ${c.summary}`);
+      }
+    }
+  } catch {}
+
+  return sections.join('\n');
 }
 
 // ─── Helpers ───

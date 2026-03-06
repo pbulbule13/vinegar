@@ -114,12 +114,14 @@ export function useNotifications(): UseNotificationsReturn {
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, dismissed: true } : n))
     );
-    // Also dismiss on server if it's a suggestion
+    // Also dismiss on server if it's a suggestion (fire-and-forget)
     fetch("/api/suggestions", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
-    }).catch(() => {});
+    }).catch(() => {
+      // Non-critical: notification dismissed locally even if server sync fails
+    });
   }, []);
 
   const dismissAll = useCallback(() => {

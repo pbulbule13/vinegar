@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSetting, setSetting } from "@/lib/db";
+export const dynamic = 'force-dynamic';
 
 const TTS_KEYS = ["tts_language", "tts_speed", "tts_pitch", "tts_voice", "stt_language"] as const;
 

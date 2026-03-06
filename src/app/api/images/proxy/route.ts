@@ -6,6 +6,8 @@
 
 import { imageProxySchema } from '@/lib/validators';
 
+export const dynamic = 'force-dynamic';
+
 // Strict hostname allowlist — only known image CDNs
 const ALLOWED_HOSTNAMES = new Set([
   'images.pexels.com',

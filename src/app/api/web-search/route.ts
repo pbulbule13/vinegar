@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { searchDuckDuckGo, queryInstantAnswer } from "@/lib/search-tools";
 import { sanitizeForExternal } from "@/lib/pii-redactor";
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get("q")?.trim();

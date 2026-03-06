@@ -7,6 +7,8 @@ import { NextResponse } from 'next/server';
 import '@/lib/init';
 import { generateBriefing } from '@/lib/briefing-tools';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const briefing = await generateBriefing();

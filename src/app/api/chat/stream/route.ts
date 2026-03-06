@@ -1,7 +1,8 @@
 /**
  * Streaming chat endpoint.
  * Returns Server-Sent Events (SSE) for progressive text rendering.
- * Includes offline command interception, tool instructions, and PII handling.
+ * Includes offline command interception, tool execution, and PII handling.
+ * Uses shared prompt-builder for context (same as non-streaming route).
  */
 
 import { cookies } from "next/headers";
@@ -11,44 +12,18 @@ import { redact, rehydrate } from "@/lib/pii-redactor";
 import { checkDailyBudget, selectModel } from "@/lib/token-budget";
 import { logConversation } from "@/lib/conversation-logger";
 import { tryOfflineResponse } from "@/lib/offline-commands";
+import { executeTool } from "@/lib/tool-executor";
+import { logToolUsage } from "@/lib/episodes";
+import { buildMemoryContext, getToolInstructions, parseToolCall } from "@/lib/prompt-builder";
 import { db } from "@/lib/db";
 import '@/lib/init';
+export const dynamic = 'force-dynamic';
 
-const EURI_BASE_URL = "https://api.euron.one/api/v1/euri";
+const EURI_BASE_URL = process.env.EURI_BASE_URL || "https://api.euron.one/api/v1/euri";
+const MAX_TOOL_ITERATIONS = 3;
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
-}
-
-function getToolInstructions(): string {
-  return `
-TOOLS: Call tools via \`\`\`tool_call\n{"name":"TOOL","arguments":{...}}\n\`\`\` format. One tool per call. ALWAYS use tools for actions.
-
-Tools: manage_grocery({action,item,quantity,unit,category}), create_event({title,start_time,end_time,description,location,reminder_minutes}), get_calendar({start,end}), update_event({id,title,start_time,end_time}), delete_event({id}), set_reminder({message,time,type,target_member}), manage_task({action,title,priority,status,due_date}), manage_chore({action,title,assigned_to,points}), manage_meals({action,date,meal_type,recipe,ingredients[]}), manage_activity({action,title,child_name,day_of_week[],start_time,end_time,location}), save_memory({topic,content,type,importance}), recall_memory({query,type}), manage_skill({action,name,type,trigger_phrases[],url}), get_family({}), get_usage({period}), get_weather({location}), get_forecast({location,days}), web_search({query}), get_briefing({}), run_workflow({steps:[{tool,args}]}), find_free_time({duration_minutes,preferred_time}), suggest_recipe({dietary_restrictions,cuisine,meal_type,servings}), manage_budget({action,name,amount,category,type,frequency,due_date}), get_traffic({from,to}), find_nearby({query,type,near,radius_miles}), check_deals({store,item,zip_code}), show_visual({query,card_type})
-`;
-}
-
-function buildMemoryContext(userMessage: string, visualContext?: string): string {
-  const sections: string[] = [];
-  try {
-    const members = db.prepare('SELECT name, role FROM family_members').all() as { name: string; role: string }[];
-    if (members.length > 0) sections.push(`[Family] ${members.map(m => `${m.name} (${m.role})`).join(', ')}`);
-  } catch {}
-
-  try {
-    const q = `%${userMessage}%`;
-    const memories = db.prepare('SELECT topic, content, type FROM memories WHERE content LIKE ? OR topic LIKE ? ORDER BY created_at DESC LIMIT 5').all(q, q) as { topic: string; content: string; type: string }[];
-    if (memories.length > 0) {
-      sections.push('[Memory]');
-      memories.forEach(m => sections.push(`- [${m.type}] ${m.topic}: ${m.content}`));
-    }
-  } catch {}
-
-  if (visualContext) {
-    sections.push(`[Visual Panel] Currently showing: ${visualContext}`);
-  }
-
-  return sections.length > 0 ? '\n---\n' + sections.join('\n') + '\n---' : '';
 }
 
 export async function POST(request: Request) {
@@ -94,7 +69,8 @@ export async function POST(request: Request) {
     }
 
     const model = selectModel(lastUserMsg, requestedModel || 'gemini-2.5-flash');
-    const memoryContext = buildMemoryContext(lastUserMsg, visualContext);
+    // Use shared buildMemoryContext (same full context as non-streaming route)
+    const memoryContext = buildMemoryContext(lastUserMsg, undefined, visualContext);
     const toolInstructions = getToolInstructions();
     const languagePrompt = language ? getLanguagePrompt(language) : '';
     const systemPrompt = `${VINEGAR_SYSTEM_PROMPT}${languagePrompt}${toolInstructions}${memoryContext}`;
@@ -114,32 +90,87 @@ export async function POST(request: Request) {
     const { redacted: redactedForLog } = redact(lastUserMsg);
     logConversation({ role: 'user', content: redactedForLog, source: 'stream' });
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
+    const encoder = new TextEncoder();
+    const toolsUsed: string[] = [];
 
-    const res = await fetch(`${EURI_BASE_URL}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages: apiMessages, stream: true, max_tokens: 2048, temperature: 0.7 }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok || !res.body) {
-      const err = await res.text();
-      return new Response(JSON.stringify({ error: err }), { status: res.status, headers: { "Content-Type": "application/json" } });
+    // ─── Helper: Non-streaming LLM call for tool follow-up ───
+    async function callLLMNonStreaming(msgs: { role: string; content: string }[]): Promise<string> {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+      try {
+        const res = await fetch(`${EURI_BASE_URL}/chat/completions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({ model, messages: msgs, max_tokens: 2048, temperature: 0.7 }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        if (!res.ok) return '';
+        const data = await res.json();
+        let content = data.choices?.[0]?.message?.content || '';
+        if (Array.isArray(content)) {
+          content = content.filter((p: { type: string }) => p.type === 'text').map((p: { text: string }) => p.text).join('');
+        }
+        return content;
+      } catch {
+        clearTimeout(timeout);
+        return '';
+      }
     }
 
-    // Transform SSE stream: rehydrate PII in each chunk
-    const reader = res.body.getReader();
-    const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
+    // ─── Helper: Execute tool call with PII rehydration ───
+    async function executeToolWithPII(toolCall: { name: string; arguments: Record<string, unknown> }): Promise<import("@/lib/tool-executor").ToolResult> {
+      const rehydratedArgs: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(toolCall.arguments || {})) {
+        if (typeof value === 'string') {
+          rehydratedArgs[key] = rehydrate(value);
+        } else if (Array.isArray(value)) {
+          rehydratedArgs[key] = value.map(v => typeof v === 'string' ? rehydrate(v) : v);
+        } else {
+          rehydratedArgs[key] = value;
+        }
+      }
+      // Inject active member ID for per-user tools
+      try {
+        const activeMember = db.prepare("SELECT id FROM family_members WHERE is_active = 1 LIMIT 1").get() as { id: string } | undefined;
+        if (activeMember) rehydratedArgs._active_member_id = activeMember.id;
+      } catch {}
+      const result = await executeTool(toolCall.name, rehydratedArgs);
+      toolsUsed.push(toolCall.name);
+      try { logToolUsage(toolCall.name, toolCall.arguments || {}); } catch {}
+      return result;
+    }
 
+    // ─── Main streaming logic ───
     const stream = new ReadableStream({
       async start(controller) {
-        let buffer = '';
-        let fullResponse = ''; // Accumulate for logging
+        let fullResponse = '';
         try {
+          // Phase 1: Stream initial LLM response
+          const abortCtrl = new AbortController();
+          const timeout = setTimeout(() => abortCtrl.abort(), 30000);
+
+          const res = await fetch(`${EURI_BASE_URL}/chat/completions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+            body: JSON.stringify({ model, messages: apiMessages, stream: true, max_tokens: 2048, temperature: 0.7 }),
+            signal: abortCtrl.signal,
+          });
+          clearTimeout(timeout);
+
+          if (!res.ok || !res.body) {
+            const err = await res.text();
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: `Error: ${err}` })}\n\n`));
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+            controller.close();
+            return;
+          }
+
+          // Read streamed response
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
@@ -151,10 +182,7 @@ export async function POST(request: Request) {
             for (const line of lines) {
               if (line.startsWith('data: ')) {
                 const data = line.slice(6).trim();
-                if (data === '[DONE]') {
-                  controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-                  continue;
-                }
+                if (data === '[DONE]') continue;
                 try {
                   const parsed = JSON.parse(data);
                   const content = parsed.choices?.[0]?.delta?.content;
@@ -163,17 +191,79 @@ export async function POST(request: Request) {
                     fullResponse += rehydrated;
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: rehydrated })}\n\n`));
                   }
-                } catch {}
+                } catch {
+                  // Malformed SSE chunk — skip
+                }
               }
             }
           }
+
+          // Phase 2: Check for tool calls in the accumulated response
+          const toolCall = parseToolCall(fullResponse);
+          if (toolCall) {
+            // Clear the streamed tool_call text — replace with execution feedback
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: '\n', clearPrevious: true })}\n\n`));
+
+            let currentMessages = [...apiMessages];
+            let toolResponse = fullResponse;
+            let finalContent = '';
+
+            for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+              const currentToolCall = parseToolCall(toolResponse);
+              if (!currentToolCall) break;
+
+              // Execute the tool
+              const toolResult = await executeToolWithPII(currentToolCall);
+
+              // Send a brief status update to the client
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                content: '',
+                toolExecution: { name: currentToolCall.name, success: toolResult.success }
+              })}\n\n`));
+
+              // Build follow-up messages for LLM
+              currentMessages = [
+                ...currentMessages,
+                { role: 'assistant', content: toolResponse },
+                { role: 'user', content: `Tool result for ${currentToolCall.name}: ${JSON.stringify(toolResult)}. Now respond naturally to the user based on this result.` },
+              ];
+
+              // Get LLM's natural language response (non-streaming for tool follow-up)
+              toolResponse = await callLLMNonStreaming(currentMessages);
+
+              // Check if this response also has a tool call
+              const nextToolCall = parseToolCall(toolResponse);
+              if (!nextToolCall) {
+                // Final response — stream it to client
+                finalContent = rehydrate(toolResponse);
+                break;
+              }
+              // Otherwise, loop continues with next tool call
+            }
+
+            // Stream the final natural language response
+            if (finalContent) {
+              // Clear the previous tool_call text and send the clean response
+              fullResponse = finalContent;
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: finalContent, replaceAll: true })}\n\n`));
+            }
+          }
+
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
         } catch (err) {
-          controller.error(err);
+          const msg = err instanceof Error ? err.message : 'Stream failed';
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: `Connection issue: ${msg}` })}\n\n`));
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
         } finally {
-          // Log the full assistant response and usage
+          // Log the full response and usage
           if (fullResponse) {
-            logConversation({ role: 'assistant', content: fullResponse, model, source: 'stream' });
-            // Log estimated usage for budget tracking
+            logConversation({
+              role: 'assistant',
+              content: fullResponse,
+              model,
+              source: 'stream',
+              toolsUsed: toolsUsed.length > 0 ? toolsUsed : undefined,
+            });
             try {
               const estIn = estimateTokens(systemPrompt + messages.map(m => m.content).join(''));
               const estOut = estimateTokens(fullResponse);
@@ -195,6 +285,7 @@ export async function POST(request: Request) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Stream failed";
+    console.error('[API /chat/stream]', message);
     return new Response(JSON.stringify({ error: message }), { status: 500, headers: { "Content-Type": "application/json" } });
   }
 }

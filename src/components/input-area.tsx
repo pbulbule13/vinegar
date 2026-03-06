@@ -86,7 +86,7 @@ export const InputArea = memo(function InputArea({
       </div>
 
       {/* Text input */}
-      <div className="input-container">
+      <div className="input-container" role="search" aria-label="Chat with Vinegar">
         <input
           ref={inputRef}
           type="text"
@@ -95,11 +95,14 @@ export const InputArea = memo(function InputArea({
           onKeyDown={onKeyDown}
           placeholder="Ask Vinegar anything..."
           disabled={isTyping}
+          aria-label="Message input"
+          aria-disabled={isTyping}
           className="flex-1 bg-transparent text-sm text-white/90 placeholder-white/20 px-4 py-3 focus:outline-none disabled:opacity-40"
         />
         <button
           onClick={onSend}
           disabled={!textInput.trim() || isTyping}
+          aria-label={isTyping ? "Sending message" : "Send message"}
           className="send-button"
         >
           {isTyping ? (
